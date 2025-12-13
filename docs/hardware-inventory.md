@@ -11,7 +11,7 @@
 | Name | Type | CPU | RAM | Storage | OS | IP Address | Status | Notes |
 |------|------|-----|-----|---------|-----|------------|--------|-------|
 | DEV-PC-Ubuntu | Workstation | Intel i7-10700 @ 2.90GHz (8c/16t) | 32GB | 1TB Samsung 980 PRO NVMe | Ubuntu 24.04.3 LTS | - | Active | Main dev machine, RTX A2000 GPU |
-| Legacy-i7 | Workstation | Intel i7 (gen TBD) | TBD | TBD | TBD | TBD | In Storage | Nvidia Quadro K500 - NEEDS POWER-UP FOR SPECS |
+| Legacy-i7 | Workstation | Intel i7 (gen TBD) | TBD | TBD | TBD | TBD | Powered On | **Quadro K5000 DEAD** - needs basic GPU for SSH access |
 | PowerEdge-R640 | 1U Rack Server | Xeon (config TBD) | TBD | 10x SFF bays | TBD | TBD | Not Accessible | Dell R640 - NEEDS PHYSICAL ACCESS FOR SPECS |
 
 ### Single Board Computers (SBCs)
@@ -39,7 +39,7 @@
 | Name | Model | VRAM | Host System | Driver | Purpose | Notes |
 |------|-------|------|-------------|--------|---------|-------|
 | RTX-A2000 | NVIDIA RTX A2000 | 6GB GDDR6 | DEV-PC-Ubuntu | TBD | ML Dev / CUDA | Main AI workstation GPU |
-| Quadro-K500 | NVIDIA Quadro K500 | ~1GB | Legacy-i7 | Legacy | Limited ML | Very old, limited use |
+| Quadro-K5000 | NVIDIA Quadro K5000 | 4GB | Legacy-i7 | - | - | **DEAD - 2025-12-13** |
 
 ### AI Development Boards
 | Name | Model | Compute | RAM | Storage | Purpose | Notes |
