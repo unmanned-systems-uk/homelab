@@ -4,52 +4,166 @@
 - **Repo:** `unmanned-systems-uk/homelab`
 - **Project ID:** 5
 - **Working Directory:** `/home/anthony/ccpm-workspace/HomeLab`
-- **Stack:** Infrastructure as Code, Docker, AI/ML tooling
+- **Stack:** Infrastructure as Code, Docker, AI/ML tooling, Proxmox
+
+## HomeLab Specialist Agent
+
+**To activate the full agent context, run:**
+```
+/start-homelab
+```
+
+This loads the complete agent definition with:
+- Full capability set
+- SCPI equipment access
+- MCP tool integration
+- Session startup checklist
+
+### Agent Identity
+- **WHO Tag:** `[HL-Specialist]`
+- **Definition:** `.claude/agents/homelab-specialist/AGENT_DEFINITION.md`
+- **Rules:** `.claude/common/AGENT_RULES.md`
+
+---
 
 ## Project Focus
+
 HomeLab is a versatile home lab infrastructure project with emphasis on:
 - AI/ML model development and training environments
 - CCPM project management integration
-- Infrastructure automation and deployment
-- Development environment standardization
+- Infrastructure automation and deployment (Proxmox, Docker)
+- Test equipment automation (SCPI)
+- Network management (UniFi)
+
+---
 
 ## Critical Rules
+
 1. **NEVER close GitHub issues** - User closes issues
 2. **Use `gh` CLI** for GitHub (not API tokens)
 3. **Correct repo:** `unmanned-systems-uk/homelab`
 4. **Test infrastructure changes** before committing
 5. **Document all hardware/network configs** in `/docs`
+6. **NEVER enable SCPI outputs** without explicit user confirmation
+7. **TIMEOUT all network commands** (2-3 seconds max)
 
-## Workflow Compliance
-Query AI-Master API for workflow rules:
-```bash
-curl -s http://localhost:8080/api/master/workflow-rules | jq .
-```
+---
+
+## Slash Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/start-homelab` | Load full agent context |
+| `/homelab-status` | Quick system status check |
+| `/scpi-scan` | Scan SCPI equipment |
+| `/network-scan` | Scan 10.0.1.x subnet |
+
+---
 
 ## Quick Commands
+
 ```bash
 # CCPM API
+curl -s http://localhost:8080/api/health | jq .
 curl -s http://localhost:8080/api/projects/5 | jq .
 curl -s "http://localhost:8080/api/sprints?project_id=5" | jq .
-curl -s "http://localhost:8080/api/tasks?project_id=5" | jq .
+curl -s "http://localhost:8080/api/todos?project_id=5" | jq .
 
 # GitHub
 gh issue list --repo unmanned-systems-uk/homelab
 gh issue create --repo unmanned-systems-uk/homelab --title "Title" --body "Body"
-```
 
-## Directory Structure
+# Quick SCPI check
+echo "*IDN?" | nc -w 2 10.0.1.101 5025
 ```
-HomeLab/
-├── docs/           # Documentation, network diagrams, hardware specs
-├── infrastructure/ # IaC configs (Docker, Ansible, Terraform)
-├── scripts/        # Automation and utility scripts
-└── .claude/        # Claude Code commands and configs
-    └── commands/   # Custom slash commands
-```
-
-## WHO Tags
-Format: `[HL-Infra]`, `[HL-AI]`, `[HL-Network]`, `[HL-Docs]`
 
 ---
-*Managed via CCPM - Project ID 5*
+
+## Directory Structure
+
+```
+HomeLab/
+├── docs/               # Documentation, hardware inventory
+│   ├── hardware-inventory.md
+│   ├── server-stack-architecture.md
+│   ├── learning-hub.md
+│   └── unifi-mcp-integration.md
+├── infrastructure/     # IaC configs (Docker, Ansible, Proxmox)
+├── scripts/            # Automation scripts
+├── ai-models/          # AI/ML configurations
+└── .claude/            # Agent system
+    ├── agents/         # Agent definitions
+    ├── commands/       # Slash commands
+    ├── skills/         # Skills (infrastructure, scpi-automation)
+    ├── common/         # Shared rules
+    └── hooks/          # Claude Code hooks
+```
+
+---
+
+## SCPI Equipment (10.0.1.x)
+
+| Device | IP | Port | Model |
+|--------|-----|------|-------|
+| DMM | 10.0.1.101 | 5025 | Keithley DMM6500 |
+| Scope | 10.0.1.106 | 5555 | Rigol MSO8204 |
+| AWG | 10.0.1.120 | 5555 | Rigol DG2052 |
+| DC Load | 10.0.1.105 | 5555 | Rigol DL3021A |
+| PSU 1 | 10.0.1.111 | 5025 | Rigol DP932A |
+| PSU 2 | 10.0.1.138 | 5025 | Rigol DP932A |
+
+---
+
+## MCP Tools Available
+
+| Tool | Purpose |
+|------|---------|
+| **Context7** | Library documentation lookup |
+| **UniFi MCP** | Network visibility (planned) |
+
+### Using Context7
+
+```
+# Resolve library ID first
+mcp__context7__resolve-library-id(libraryName: "docker")
+
+# Then fetch docs
+mcp__context7__get-library-docs(context7CompatibleLibraryID: "/docker/docs", topic: "compose")
+```
+
+---
+
+## Skills
+
+| Skill | Location | Purpose |
+|-------|----------|---------|
+| infrastructure | `.claude/skills/infrastructure/` | Proxmox, Docker, networking |
+| scpi-automation | `.claude/skills/scpi-automation/` | Test equipment control |
+
+---
+
+## WHO Tags
+
+| Tag | Domain |
+|-----|--------|
+| `[HL-Specialist]` | Main agent |
+| `[HL-Infra]` | Infrastructure tasks |
+| `[HL-AI]` | AI/ML tasks |
+| `[HL-Network]` | Network tasks |
+| `[HL-SCPI]` | Test equipment |
+| `[HL-Docs]` | Documentation |
+
+---
+
+## Key Documentation
+
+| Document | Purpose |
+|----------|---------|
+| `docs/hardware-inventory.md` | All equipment |
+| `docs/server-stack-architecture.md` | Proxmox/VM design |
+| `docs/learning-hub.md` | AI/ML resources |
+| `docs/session-summary-*.md` | Session records |
+
+---
+
+*HomeLab Specialist Agent - Managed via CCPM Project ID 5*
