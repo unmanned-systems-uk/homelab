@@ -66,21 +66,44 @@ Leverage available MCP tools:
 
 ---
 
-## Task Lifecycle
+## Task Lifecycle (CCPM Workflow Enforcement)
 
-For CCPM-tracked tasks:
+**IMPORTANT:** CCPM enforces strict workflow progression via database triggers (Migration 047).
+You CANNOT skip workflow steps. Follow this exact sequence:
 
+### Standard Task Workflow
+
+1. **Start Work:**
+   - Task begins in `status:todo`
+   - Update to `status:in-progress` when starting
+   - OR mark first workflow step as complete
+
+2. **Complete Work:**
+   - Update to `status:review` when work done
+   - Submit test evidence: `POST /api/todos/:id/tests`
+   - Include: test_type, environment, result, evidence (JSON)
+
+3. **Get Approval:**
+   - Test must be approved before completion
+   - Check test status: `GET /api/todos/:id/tests`
+   - Wait for `status: "approved"`
+
+4. **Submit Completion Report:**
+   - Document deliverables, testing, next steps
+   - POST to `/api/todos/:id/report`
+
+5. **Mark Complete:**
+   - Use Human endpoint: `POST /api/human/todos/:id/complete`
+   - Task transitions: `status:testing` → `status:complete`
+   - Signal completion: `bash .claude/master/signal-completion.sh`
+   - Update GitHub issue if linked
+
+### Workflow States
 ```
-status:todo
-    ↓
-[Agent sets] status:in-progress
-    ↓
-[Agent does work]
-    ↓
-[Agent sets] status:complete (HomeLab is simpler than CCPM core)
-    ↓
-[Update GitHub issue if linked]
+status:todo → status:in-progress → status:review → status:testing → status:complete
 ```
+
+**Never skip states.** Workflow triggers will block invalid transitions.
 
 ---
 

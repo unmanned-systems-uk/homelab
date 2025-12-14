@@ -60,6 +60,57 @@ HomeLab is a versatile home lab infrastructure project with emphasis on:
 
 ---
 
+## CCPM Workflow Compliance
+
+HomeLab tasks use the same workflow enforcement as all CCPM agents.
+
+### Query Workflow Rules
+```bash
+curl -s http://localhost:8080/api/master/workflow-rules | jq .
+```
+
+### Completion Signaling
+When you complete tasks, signal Master immediately:
+```bash
+bash .claude/master/signal-completion.sh
+```
+
+### Testing Requirements
+All tasks require test evidence before completion:
+1. Submit test: `POST /api/todos/:id/tests` with evidence
+2. Get approval: `POST /api/tests/:id/approve` (or wait for human approval)
+3. Test status syncs automatically to task
+
+### Task Status API
+```bash
+# Update task status
+curl -X PUT "http://localhost:8080/api/todos/:id" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "status:in-progress"}'
+
+# Submit test evidence
+curl -X POST "http://localhost:8080/api/todos/:id/tests" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "test_type": "manual_technical",
+    "tested_by": "agent:homelab",
+    "environment": "production",
+    "result": "pass",
+    "evidence": {...}
+  }'
+
+# Submit completion report
+curl -X POST "http://localhost:8080/api/todos/:id/report" \
+  -H "Content-Type: application/json" \
+  -d '{"report": "..."}'
+
+# Complete task (after test approved)
+curl -X POST "http://localhost:8080/api/human/todos/:id/complete" \
+  -H "X-Actor: human:master"
+```
+
+---
+
 ## Quick Commands
 
 ```bash
