@@ -1,0 +1,42 @@
+version: 2
+
+servers:
+  homelab-infra:
+    name: HomeLab Infrastructure
+    description: Access HomeLab VMs, credentials, services, and network configuration
+    image: homelab-infra:latest
+
+    tools:
+      - name: homelab_list_vms
+        description: List all virtual machines in the HomeLab
+      - name: homelab_get_vm
+        description: Get detailed information about a specific VM
+      - name: homelab_get_credentials
+        description: Get credentials for a target (AUDIT LOGGED)
+      - name: homelab_list_services
+        description: List all services in the HomeLab
+      - name: homelab_check_service_health
+        description: Check the health of a service endpoint
+      - name: homelab_list_hosts
+        description: List all Proxmox hosts
+      - name: homelab_get_host
+        description: Get detailed information about a Proxmox host
+      - name: homelab_lookup_ip
+        description: Look up what's allocated to an IP address
+
+    metadata:
+      category: infrastructure
+      tags:
+        - homelab
+        - proxmox
+        - virtualization
+        - networking
+
+    # Mount the database and encryption module
+    volumes:
+      - /home/anthony/ccpm-workspace/HomeLab/infrastructure/homelab.db:/data/homelab.db:ro
+      - /home/anthony/ccpm-workspace/HomeLab/infrastructure/db:/app/infrastructure/db:ro
+
+    # Environment for encryption key
+    secrets:
+      - HOMELAB_DB_KEY
