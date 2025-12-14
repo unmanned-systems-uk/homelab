@@ -1,0 +1,542 @@
+#!/home/anthony/ccpm-workspace/HomeLab/.venv/bin/python3
+"""
+HomeLab Infrastructure Database CLI
+Manages VMs, containers, credentials, services, and network configuration.
+"""
+
+import sys
+import os
+from pathlib import Path
+import click
+from getpass import getpass
+from tabulate import tabulate
+
+# Add db module to path
+sys.path.insert(0, str(Path(__file__).parent))
+from db import HomelabDB, CredentialEncryption
+
+
+@click.group()
+@click.pass_context
+def cli(ctx):
+    """HomeLab Infrastructure Database Management Tool"""
+    ctx.ensure_object(dict)
+    ctx.obj['db'] = HomelabDB()
+
+
+# ==================== VM Commands ====================
+
+@cli.group()
+def vm():
+    """Manage virtual machines and containers"""
+    pass
+
+
+@vm.command('list')
+@click.option('--host', type=int, help='Filter by host ID')
+@click.option('--status', help='Filter by status')
+@click.pass_context
+def vm_list(ctx, host, status):
+    """List all virtual machines"""
+    db = ctx.obj['db']
+    vms = db.get_vms(host_id=host, status=status)
+
+    if not vms:
+        click.echo("No VMs found.")
+        return
+
+    table = [[
+        vm['vm_id'],
+        vm['name'],
+        vm['type'],
+        vm['ip_address'] or 'N/A',
+        vm['status'],
+        vm['purpose'] or 'N/A'
+    ] for vm in vms]
+
+    click.echo(tabulate(table, headers=['VMID', 'Name', 'Type', 'IP', 'Status', 'Purpose'], tablefmt='simple'))
+
+
+@vm.command('add')
+@click.option('--vmid', required=True, type=int, help='Proxmox VM ID')
+@click.option('--host-id', required=True, type=int, help='Proxmox host ID')
+@click.option('--name', required=True, help='VM name')
+@click.option('--type', 'vm_type', required=True, type=click.Choice(['vm', 'lxc']), help='VM or LXC container')
+@click.option('--ip', help='IP address')
+@click.option('--os', help='Operating system')
+@click.option('--cpu', type=int, help='CPU cores')
+@click.option('--ram', type=int, help='RAM in GB')
+@click.option('--disk', type=int, help='Disk in GB')
+@click.option('--gpu', help='GPU passthrough')
+@click.option('--purpose', help='VM purpose/description')
+@click.option('--status', default='stopped', help='Initial status')
+@click.pass_context
+def vm_add(ctx, vmid, host_id, name, vm_type, ip, os, cpu, ram, disk, gpu, purpose, status):
+    """Add a new virtual machine"""
+    db = ctx.obj['db']
+
+    kwargs = {}
+    if ip:
+        kwargs['ip_address'] = ip
+    if os:
+        kwargs['os'] = os
+    if cpu:
+        kwargs['cpu_cores'] = cpu
+    if ram:
+        kwargs['ram_gb'] = ram
+    if disk:
+        kwargs['disk_gb'] = disk
+    if gpu:
+        kwargs['gpu_passthrough'] = gpu
+    if purpose:
+        kwargs['purpose'] = purpose
+    if status:
+        kwargs['status'] = status
+
+    vm_db_id = db.add_vm(vmid, host_id, name, vm_type, **kwargs)
+    click.echo(f"✓ VM {name} (VMID: {vmid}) added successfully (DB ID: {vm_db_id})")
+
+
+@vm.command('update')
+@click.argument('vmid', type=int)
+@click.option('--status', required=True, help='New status')
+@click.pass_context
+def vm_update(ctx, vmid, status):
+    """Update VM status"""
+    db = ctx.obj['db']
+    db.update_vm_status(vmid, status)
+    click.echo(f"✓ VM {vmid} status updated to: {status}")
+
+
+@vm.command('show')
+@click.argument('vmid', type=int)
+@click.pass_context
+def vm_show(ctx, vmid):
+    """Show detailed VM information"""
+    db = ctx.obj['db']
+    vm = db.get_vm_by_id(vmid)
+
+    if not vm:
+        click.echo(f"Error: VM {vmid} not found", err=True)
+        return
+
+    click.echo(f"\n{click.style('VM Details', bold=True)}")
+    click.echo(f"VMID:         {vm['vm_id']}")
+    click.echo(f"Name:         {vm['name']}")
+    click.echo(f"Type:         {vm['type']}")
+    click.echo(f"IP Address:   {vm['ip_address'] or 'N/A'}")
+    click.echo(f"OS:           {vm['os'] or 'N/A'}")
+    click.echo(f"CPU Cores:    {vm['cpu_cores'] or 'N/A'}")
+    click.echo(f"RAM (GB):     {vm['ram_gb'] or 'N/A'}")
+    click.echo(f"Disk (GB):    {vm['disk_gb'] or 'N/A'}")
+    click.echo(f"GPU:          {vm['gpu_passthrough'] or 'N/A'}")
+    click.echo(f"Purpose:      {vm['purpose'] or 'N/A'}")
+    click.echo(f"Status:       {vm['status']}")
+    click.echo(f"Created:      {vm['created_at']}")
+
+
+# ==================== Host Commands ====================
+
+@cli.group()
+def host():
+    """Manage Proxmox hosts"""
+    pass
+
+
+@host.command('list')
+@click.pass_context
+def host_list(ctx):
+    """List all Proxmox hosts"""
+    db = ctx.obj['db']
+    hosts = db.get_hosts()
+
+    if not hosts:
+        click.echo("No hosts found.")
+        return
+
+    table = [[
+        host['id'],
+        host['node_name'],
+        host['ip_address'],
+        host['status'],
+        host['total_cpu'] or 'N/A',
+        host['total_ram_gb'] or 'N/A'
+    ] for host in hosts]
+
+    click.echo(tabulate(table, headers=['ID', 'Node Name', 'IP', 'Status', 'CPUs', 'RAM (GB)'], tablefmt='simple'))
+
+
+@host.command('add')
+@click.option('--name', required=True, help='Node name')
+@click.option('--ip', required=True, help='IP address')
+@click.option('--api-url', help='Proxmox API URL')
+@click.option('--hardware', help='Hardware reference')
+@click.option('--cpu', type=int, help='Total CPU cores')
+@click.option('--ram', type=int, help='Total RAM in GB')
+@click.option('--gpus', help='GPU list (comma-separated)')
+@click.pass_context
+def host_add(ctx, name, ip, api_url, hardware, cpu, ram, gpus):
+    """Add a new Proxmox host"""
+    db = ctx.obj['db']
+
+    kwargs = {}
+    if api_url:
+        kwargs['api_url'] = api_url
+    if hardware:
+        kwargs['hardware_ref'] = hardware
+    if cpu:
+        kwargs['total_cpu'] = cpu
+    if ram:
+        kwargs['total_ram_gb'] = ram
+    if gpus:
+        kwargs['gpus'] = [g.strip() for g in gpus.split(',')]
+
+    host_id = db.add_host(name, ip, **kwargs)
+    click.echo(f"✓ Host {name} added successfully (ID: {host_id})")
+
+
+# ==================== Credential Commands ====================
+
+@cli.group()
+def cred():
+    """Manage encrypted credentials"""
+    pass
+
+
+@cred.command('add')
+@click.option('--target', required=True, help='Target (e.g., vm:100, host:1)')
+@click.option('--user', required=True, help='Username')
+@click.option('--password', is_flag=True, help='Prompt for password')
+@click.option('--ssh-key', help='Path to SSH key')
+@click.option('--api-token', is_flag=True, help='Prompt for API token')
+@click.option('--root', is_flag=True, help='Mark as root access')
+@click.option('--notes', help='Additional notes')
+@click.pass_context
+def cred_add(ctx, target, user, password, ssh_key, api_token, root, notes):
+    """Add encrypted credentials"""
+    db = ctx.obj['db']
+
+    # Parse target
+    parts = target.split(':')
+    if len(parts) != 2:
+        click.echo("Error: Target must be in format 'type:id' (e.g., vm:100)", err=True)
+        return
+
+    target_type, target_id = parts[0], int(parts[1])
+
+    # Get password if requested
+    password_value = None
+    if password:
+        password_value = getpass("Password: ")
+        password_confirm = getpass("Confirm password: ")
+        if password_value != password_confirm:
+            click.echo("Error: Passwords do not match", err=True)
+            return
+
+    # Get API token if requested
+    token_value = None
+    if api_token:
+        token_value = getpass("API Token: ")
+
+    kwargs = {
+        'target_name': target,
+        'is_root': root
+    }
+    if notes:
+        kwargs['notes'] = notes
+
+    cred_id = db.add_credential(target_type, target_id, user, password_value, ssh_key, token_value, **kwargs)
+    click.echo(f"✓ Credentials added successfully (ID: {cred_id})")
+
+
+@cred.command('get')
+@click.argument('target')
+@click.option('--user', help='Specific username')
+@click.pass_context
+def cred_get(ctx, target, user):
+    """Get and decrypt credentials (SECURITY: This is logged)"""
+    db = ctx.obj['db']
+
+    # Parse target
+    parts = target.split(':')
+    if len(parts) != 2:
+        click.echo("Error: Target must be in format 'type:id' (e.g., vm:100)", err=True)
+        return
+
+    target_type, target_id = parts[0], int(parts[1])
+
+    cred = db.get_credential(target_type, target_id, user)
+
+    if not cred:
+        click.echo(f"Error: No credentials found for {target}", err=True)
+        return
+
+    click.echo(f"\n{click.style('⚠ SECURITY WARNING: Credential access is logged', fg='yellow', bold=True)}\n")
+    click.echo(f"Target:    {cred['target_type']}:{cred['target_id']}")
+    click.echo(f"Username:  {cred['username']}")
+    click.echo(f"Auth Type: {cred['auth_type']}")
+
+    if cred.get('password'):
+        click.echo(f"Password:  {cred['password']}")
+    if cred.get('ssh_key_path'):
+        click.echo(f"SSH Key:   {cred['ssh_key_path']}")
+    if cred.get('api_token'):
+        click.echo(f"API Token: {cred['api_token']}")
+
+
+@cred.command('list')
+@click.pass_context
+def cred_list(ctx):
+    """List all credentials (without decryption)"""
+    db = ctx.obj['db']
+    creds = db.list_credentials()
+
+    if not creds:
+        click.echo("No credentials found.")
+        return
+
+    table = [[
+        cred['id'],
+        f"{cred['target_type']}:{cred['target_id']}",
+        cred['username'],
+        cred['auth_type'],
+        '✓' if cred['is_root'] else '',
+        cred['created_at']
+    ] for cred in creds]
+
+    click.echo(tabulate(table, headers=['ID', 'Target', 'User', 'Auth', 'Root', 'Created'], tablefmt='simple'))
+
+
+# ==================== Service Commands ====================
+
+@cli.group()
+def service():
+    """Manage services on VMs"""
+    pass
+
+
+@service.command('add')
+@click.option('--vm', required=True, type=int, help='VM database ID')
+@click.option('--name', required=True, help='Service name')
+@click.option('--port', type=int, help='Service port')
+@click.option('--protocol', default='http', help='Protocol (http, https, tcp)')
+@click.option('--url', help='Service URL')
+@click.option('--docker', help='Docker container name')
+@click.option('--systemd', help='Systemd unit name')
+@click.pass_context
+def service_add(ctx, vm, name, port, protocol, url, docker, systemd):
+    """Add a service to a VM"""
+    db = ctx.obj['db']
+
+    kwargs = {}
+    if port:
+        kwargs['port'] = port
+    if protocol:
+        kwargs['protocol'] = protocol
+    if url:
+        kwargs['url'] = url
+    if docker:
+        kwargs['docker_container'] = docker
+    if systemd:
+        kwargs['systemd_unit'] = systemd
+
+    service_id = db.add_service(vm, name, **kwargs)
+    click.echo(f"✓ Service {name} added to VM {vm} (ID: {service_id})")
+
+
+@service.command('list')
+@click.option('--vm', type=int, help='Filter by VM ID')
+@click.pass_context
+def service_list(ctx, vm):
+    """List services"""
+    db = ctx.obj['db']
+    services = db.get_services(vm_id=vm)
+
+    if not services:
+        click.echo("No services found.")
+        return
+
+    table = [[
+        svc['id'],
+        svc['vm_id'],
+        svc['service_name'],
+        svc['port'] or 'N/A',
+        svc['status'],
+        svc['docker_container'] or svc['systemd_unit'] or 'N/A'
+    ] for svc in services]
+
+    click.echo(tabulate(table, headers=['ID', 'VM ID', 'Service', 'Port', 'Status', 'Runtime'], tablefmt='simple'))
+
+
+@service.command('status')
+@click.argument('service_id', type=int)
+@click.argument('status')
+@click.pass_context
+def service_status(ctx, service_id, status):
+    """Update service status"""
+    db = ctx.obj['db']
+    db.update_service_status(service_id, status)
+    click.echo(f"✓ Service {service_id} status updated to: {status}")
+
+
+# ==================== Network Commands ====================
+
+@cli.group()
+def ip():
+    """Manage IP allocations"""
+    pass
+
+
+@ip.command('reserve')
+@click.argument('ip_address')
+@click.option('--hostname', help='Hostname')
+@click.option('--allocated-to', help='Allocation target (e.g., vm:100)')
+@click.option('--dhcp', is_flag=True, help='DHCP reservation')
+@click.pass_context
+def ip_reserve(ctx, ip_address, hostname, allocated_to, dhcp):
+    """Reserve an IP address"""
+    db = ctx.obj['db']
+
+    kwargs = {}
+    if hostname:
+        kwargs['hostname'] = hostname
+    if dhcp:
+        kwargs['dhcp_reservation'] = True
+
+    ip_id = db.reserve_ip(ip_address, hostname, allocated_to, **kwargs)
+    click.echo(f"✓ IP {ip_address} reserved (ID: {ip_id})")
+
+
+@ip.command('list')
+@click.option('--available', is_flag=True, help='Show only available IPs')
+@click.pass_context
+def ip_list(ctx, available):
+    """List IP allocations"""
+    db = ctx.obj['db']
+    ips = db.get_ips(available_only=available)
+
+    if not ips:
+        click.echo("No IP allocations found.")
+        return
+
+    table = [[
+        ip['ip_address'],
+        ip['hostname'] or 'N/A',
+        ip['allocated_to'] or 'N/A',
+        '✓' if ip['reserved'] else '',
+        '✓' if ip['dhcp_reservation'] else ''
+    ] for ip in ips]
+
+    click.echo(tabulate(table, headers=['IP Address', 'Hostname', 'Allocated To', 'Reserved', 'DHCP'], tablefmt='simple'))
+
+
+# ==================== Audit Commands ====================
+
+@cli.group()
+def audit():
+    """View audit logs"""
+    pass
+
+
+@audit.command('log')
+@click.option('--limit', default=50, type=int, help='Number of entries')
+@click.option('--action', help='Filter by action type')
+@click.pass_context
+def audit_log(ctx, limit, action):
+    """View audit log"""
+    db = ctx.obj['db']
+    logs = db.get_audit_log(limit=limit, action=action)
+
+    if not logs:
+        click.echo("No audit log entries found.")
+        return
+
+    table = [[
+        log['id'],
+        log['timestamp'],
+        log['action'],
+        f"{log['target_type']}:{log['target_id']}" if log['target_type'] else 'N/A',
+        log['user']
+    ] for log in logs]
+
+    click.echo(tabulate(table, headers=['ID', 'Timestamp', 'Action', 'Target', 'User'], tablefmt='simple'))
+
+
+# ==================== Utility Commands ====================
+
+@cli.command('init')
+@click.pass_context
+def init_db(ctx):
+    """Initialize database with seed data"""
+    db = ctx.obj['db']
+
+    click.echo("Initializing HomeLab database with seed data...")
+
+    # Add Proxmox host
+    try:
+        host_id = db.add_host(
+            'homelab-pve',
+            '10.0.1.130',
+            api_url='https://10.0.1.130:8006',
+            hardware_ref='Legacy-i7',
+            total_cpu=16,
+            total_ram_gb=32,
+            gpus=['GTX 1080 Ti', 'Quadro P620']
+        )
+        click.echo(f"✓ Added Proxmox host 'homelab-pve' (ID: {host_id})")
+    except Exception as e:
+        click.echo(f"⚠ Host may already exist: {e}")
+
+    # Add first VM (whisper)
+    try:
+        vm_id = db.add_vm(
+            vm_id=100,
+            host_id=1,
+            name='whisper',
+            vm_type='vm',
+            os='Ubuntu Server 24.04',
+            cpu_cores=6,
+            ram_gb=24,
+            disk_gb=100,
+            gpu_passthrough='GTX 1080 Ti',
+            purpose='Voice Server - TTS API',
+            status='running'
+        )
+        click.echo(f"✓ Added VM 'whisper' (VMID: 100, DB ID: {vm_id})")
+    except Exception as e:
+        click.echo(f"⚠ VM may already exist: {e}")
+
+    click.echo("\n✓ Database initialized successfully!")
+
+
+@cli.command('info')
+@click.pass_context
+def db_info(ctx):
+    """Show database information"""
+    db = ctx.obj['db']
+
+    click.echo(f"\n{click.style('HomeLab Database Info', bold=True)}")
+    click.echo(f"Location:    {db.db_path}")
+    click.echo(f"Hosts:       {len(db.get_hosts())}")
+    click.echo(f"VMs:         {len(db.get_vms())}")
+    click.echo(f"Credentials: {len(db.list_credentials())}")
+    click.echo(f"Services:    {len(db.get_services())}")
+    click.echo(f"IP Allocs:   {len(db.get_ips())}")
+
+    # Check encryption key
+    enc = CredentialEncryption()
+    if enc.KEY_FILE.exists():
+        click.echo(f"Encryption:  ✓ Key found at {enc.KEY_FILE}")
+    else:
+        click.echo(f"Encryption:  ⚠ Using environment key")
+
+
+if __name__ == '__main__':
+    try:
+        cli(obj={})
+    except KeyboardInterrupt:
+        click.echo("\n\nOperation cancelled.")
+        sys.exit(0)
+    except Exception as e:
+        click.echo(f"\nError: {e}", err=True)
+        sys.exit(1)

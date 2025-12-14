@@ -1,6 +1,6 @@
 # HomeLab Hardware Inventory
 
-**Last Updated:** 2025-12-12
+**Last Updated:** 2025-12-13
 **Status:** In Progress
 
 ---
@@ -11,7 +11,7 @@
 | Name | Type | CPU | RAM | Storage | OS | IP Address | Status | Notes |
 |------|------|-----|-----|---------|-----|------------|--------|-------|
 | DEV-PC-Ubuntu | Workstation | Intel i7-10700 @ 2.90GHz (8c/16t) | 32GB | 1TB Samsung 980 PRO NVMe | Ubuntu 24.04.3 LTS | - | Active | Main dev machine, RTX A2000 GPU |
-| Legacy-i7 | Workstation | Intel i7 (gen TBD) | TBD | TBD | TBD | TBD | Powered On | **Quadro K5000 DEAD** - needs basic GPU for SSH access |
+| Legacy-i7 | Workstation | Intel i7-7820X @ 3.6GHz (8c/16t, 4.5GHz boost, AVX-512) | 32GB | 1TB Samsung 960 PRO NVMe + 2x 500GB Samsung 860 EVO SSD | Ubuntu (temp) | 10.0.1.130 | Active | **PROXMOX TARGET** - GTX 1080 Ti + Quadro P620 |
 | PowerEdge-R640 | 1U Rack Server | Xeon (config TBD) | TBD | 10x SFF bays | TBD | TBD | Not Accessible | Dell R640 - NEEDS PHYSICAL ACCESS FOR SPECS |
 
 ### Single Board Computers (SBCs)
@@ -39,7 +39,9 @@
 | Name | Model | VRAM | Host System | Driver | Purpose | Notes |
 |------|-------|------|-------------|--------|---------|-------|
 | RTX-A2000 | NVIDIA RTX A2000 | 6GB GDDR6 | DEV-PC-Ubuntu | TBD | ML Dev / CUDA | Main AI workstation GPU |
-| Quadro-K5000 | NVIDIA Quadro K5000 | 4GB | Legacy-i7 | - | - | **DEAD - 2025-12-13** |
+| GTX-1080Ti | NVIDIA GeForce GTX 1080 Ti | 11GB GDDR5X | Legacy-i7 | - | AI VM Passthrough | **PRIMARY AI GPU** - for Proxmox VM passthrough |
+| Quadro-P620 | NVIDIA Quadro P620 | 2GB GDDR5 | Legacy-i7 | - | Proxmox Console | Low-profile, host display output |
+| Quadro-K5000 | NVIDIA Quadro K5000 | 4GB | - | - | - | **DEAD - 2025-12-13** - Removed from Legacy-i7 |
 
 ### AI Development Boards
 | Name | Model | Compute | RAM | Storage | Purpose | Notes |
@@ -89,7 +91,7 @@
 ### NAS / Storage Servers
 | Name | Model | Capacity | RAID | IP Address | Status | Purpose | Notes |
 |------|-------|----------|------|------------|--------|---------|-------|
-| Synology | TBD | TBD | TBD | TBD | Active | Primary NAS | Currently in use |
+| ccpm-nas | Synology | ~45TB | TBD | 10.0.1.251 | Active | Primary NAS | Proxmox backup target, SMB share: //ccpm-nas.local/proxmox/ |
 | QNAP | TBD | ~24TB | TBD | - | Offline | Secondary NAS | Noisy, needs rebuild |
 
 ### Server Storage (R640)
