@@ -432,5 +432,7 @@ def homelab_lookup_ip(ip: str) -> dict:
 # ==================== Run Server ====================
 
 if __name__ == "__main__":
-    logger.info(f"Starting HomeLab MCP Server with DB: {DB_PATH}")
-    mcp.run()
+    import os
+    port = int(os.environ.get("MCP_PORT", 8080))
+    logger.info(f"Starting HomeLab MCP Server with DB: {DB_PATH} on port {port}")
+    mcp.run(transport="sse", port=port, host="0.0.0.0")
