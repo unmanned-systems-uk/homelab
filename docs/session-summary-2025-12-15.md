@@ -1107,3 +1107,325 @@ echo "$OUTPUT" | jq -c '{cli_command, model, user_query}'
 
 ---
 
+
+---
+
+## Session Continuation: Open WebUI MCP Integration Research
+
+### 15. Open WebUI Native MCP Support Discovery 🎯
+
+**Discovery:** While testing the two-phase workflow, user discovered that Open WebUI v0.6.31+ has **native MCP server integration**.
+
+**Documentation:** https://docs.openwebui.com/features/mcp/
+
+**Key Capabilities:**
+- Admin Settings → External Tools → Add MCP Server
+- Transport: MCP (Streamable HTTP) via SSE
+- Tools callable directly from chat interface
+- Natural language interaction
+
+**Impact on Architecture:**
+This **completely simplifies** the implementation approach from complex FastAPI sidecar with custom authentication to native MCP tool integration.
+
+**Before (complex sidecar):**
+```
+Open WebUI → Custom FastAPI → SSH → Whisper VM
+            → Custom Auth (JWT)
+            → WebSocket terminal
+            → SSE metrics
+```
+
+**After (MCP native):**
+```
+Open WebUI → MCP Server → SSH → Whisper VM
+   (built-in)    (tools)
+```
+
+---
+
+### 16. HomeLab MCP Server Compatibility Verification ✅
+
+**Current Setup:**
+- HomeLab MCP server: http://10.0.1.202:8080/sse
+- Transport: SSE (Server-Sent Events)
+- Status: Running on Harbor VM
+
+**Compatibility Check:**
+```bash
+curl -s http://10.0.1.202:8080/sse -N --max-time 2
+# Result: event: endpoint
+#         data: /messages/?session_id=...
+```
+
+**Verdict:** ✅ **Compatible** - HomeLab MCP uses SSE transport, which Open WebUI supports natively
+
+---
+
+### 17. MCP Integration Implementation Plan
+
+**Documentation Created:** `whisper-mcp-integration-plan.md`
+
+**Recommended Approach:** Extend existing HomeLab MCP server with Whisper management tools
+
+**Tools to Implement:**
+1. `whisper_ssh_command(command: str)` - Execute shell commands
+2. `ollama_list_models()` - List Ollama models  
+3. `ollama_pull_model(model_name: str)` - Pull new model
+4. `ollama_delete_model(model_name: str)` - Delete model
+5. `whisper_gpu_status()` - GPU metrics
+6. `whisper_read_file(file_path: str)` - Read files
+7. `whisper_write_file(file_path, content)` - Write files
+
+**Implementation:**
+- Add `asyncssh` and `httpx` dependencies
+- Create `tools/whisper.py` with @mcp.tool() decorators
+- Mount SSH key to container
+- Deploy to Harbor VM
+
+**Integration:**
+- Configure in Open WebUI: Admin Settings → External Tools
+- Server URL: `http://homelab-mcp:8000/sse`
+- Type: MCP (Streamable HTTP)
+
+**User Experience:**
+```
+User: "What Ollama models are on Whisper?"
+Assistant: [calls ollama_list_models()]
+→ "You have requirements-agent:latest, claude-refiner:latest, llama3:8b"
+```
+
+**Advantages Over Sidecar:**
+- ✅ No custom authentication needed
+- ✅ No WebSocket/SSE endpoint management
+- ✅ No Nginx reverse proxy configuration
+- ✅ Natural language tool invocation
+- ✅ LLM decides when to use tools
+
+---
+
+### 18. GitHub Issue Created
+
+**Repository:** cc-project-management
+**Issue:** #436 - "Investigate Open WebUI MCP Integration for Enhanced Workflow"
+**URL:** https://github.com/unmanned-systems-uk/cc-project-management/issues/436
+
+**Purpose:** Document MCP opportunity for future CCPM integration
+
+**Scope:**
+- Exploratory testing with Whisper VM tools (HomeLab project)
+- Evaluate for CCPM formal integration (future sprint)
+- Document UX patterns, authentication model, limitations
+
+**Status:** Open, assigned to HomeLab project testing phase
+
+---
+
+### 19. Testing Tasks Created in HomeLab Project
+
+**Exploratory Tasks (NOT formal sprint):**
+
+| ID | Task | Purpose |
+|----|------|---------|
+| #1063 | [TEST] MCP Compatibility Check | Verify Open WebUI MCP support in Admin Settings |
+| #1065 | [TEST] Extend HomeLab MCP with Whisper Tools | Add SSH, Ollama, GPU tools |
+| #1067 | [TEST] Deploy MCP Server to Harbor | Deploy extended server |
+| #1068 | [TEST] Configure MCP in Open WebUI | Add to External Tools |
+| #1069 | [TEST] Test MCP Tools from Chat | Test conversational interaction |
+| #1070 | [TEST] Document MCP Findings | UX patterns, recommendations |
+
+**Approach:** Rapid testing and evaluation, then decide on formal sprint implementation
+
+---
+
+### 20. Open WebUI Customization Research
+
+**User Question:** "Can we edit/customize Open WebUI? Can we make this our Open WebUI?"
+
+**Investigation:** Three levels of customization documented
+
+#### Level 1: Environment Variables (Simple) ⭐
+
+**What's Changeable:**
+- Page title: `WEBUI_NAME="HomeLab AI"`
+- Disable signups: `ENABLE_SIGNUP=false`
+- User roles: `DEFAULT_USER_ROLE=pending`
+- Feature toggles: RAG, image generation, etc.
+
+**Effort:** 5 minutes (no rebuild)
+
+#### Level 2: CSS Customization (Moderate)
+
+**What's Changeable:**
+- Colors (HomeLab green theme)
+- Fonts and typography
+- UI element visibility
+- Custom branding elements
+
+**Approach:** Inject custom.css file into container
+**Effort:** 1-2 hours
+
+#### Level 3: Source Code Fork (Advanced)
+
+**What's Changeable:**
+- **EVERYTHING** - full React UI control
+- Custom pages and features
+- Deep integrations
+- Complete rebranding
+
+**Approach:** Fork repository, build custom image
+**Effort:** Ongoing maintenance
+
+**Documentation Created:**
+- `openwebui-customization-guide.md` - All customization levels
+- `openwebui-fork-guide.md` - Fork/build/deploy process
+
+---
+
+### 21. Open WebUI Source Code Analysis
+
+**Repository Cloned:** https://github.com/open-webui/open-webui
+
+**Structure:**
+```
+open-webui/
+├── src/              # Frontend (SvelteKit)
+├── backend/          # Backend (Python FastAPI)
+├── Dockerfile        # Multi-stage build
+└── docker-compose.yaml
+```
+
+**Tech Stack:**
+- Frontend: SvelteKit + Vite + TailwindCSS
+- Backend: Python 3.11 + FastAPI
+- Database: SQLite (default)
+
+**License:** MIT (fully permissive, can modify for internal use)
+
+**Build Time:** 5-10 minutes (first build), 1-2 minutes (rebuilds)
+
+**Customization Potential:** 100% - can change anything
+
+**Key Findings:**
+- ✅ Full source code available
+- ✅ MIT license allows modifications
+- ✅ For <50 users: Full rebrand allowed
+- ✅ Active development (frequent updates)
+- ⚠️ Forking requires ongoing maintenance (merge upstream updates)
+
+**Recommendation:** Test upstream image first, fork only if needed
+
+---
+
+### 22. MCP Development Agent Handoff Preparation
+
+**Decision:** Hand off MCP integration work to dedicated MCP development agent
+
+**Reason:**
+- Context getting full
+- MCP development is specialized work
+- HomeLab Specialist should focus on infrastructure evaluation
+
+**Handoff Document Created:** `mcp-development-agent-handoff.md`
+
+**Contents:**
+- Complete mission briefing
+- All research findings
+- Step-by-step implementation guide
+- Testing procedures
+- Success criteria
+- Timeline estimates (8-16 hours)
+
+**What's Documented:**
+- ✅ Open WebUI MCP capabilities
+- ✅ HomeLab MCP server compatibility
+- ✅ Tool specifications (7 tools)
+- ✅ Implementation code examples
+- ✅ Deployment instructions
+- ✅ Testing procedures
+- ✅ Known challenges and solutions
+
+**Next Agent Tasks:**
+1. Extend homelab-mcp server with Whisper tools
+2. Deploy to Harbor VM
+3. Configure in Open WebUI
+4. Test integration
+5. Document findings
+
+---
+
+## Updated Infrastructure Status
+
+### Proxmox VMs
+
+| VMID | Name | IP | Purpose | Status |
+|------|------|-----|---------|--------|
+| 100 | whisper-tts | 10.0.1.201 | TTS + Ollama (GPU) | Running |
+| 101 | harbor | 10.0.1.202 | Docker Services | Running |
+
+### Services Running
+
+| Service | Location | URL | Purpose |
+|---------|----------|-----|---------|
+| Ollama | Whisper VM | http://10.0.1.201:11434 | LLM inference |
+| Open WebUI | Harbor VM | http://10.0.1.202:3000 | Ollama web interface (HTTP) |
+| Open WebUI (HTTPS) | Harbor VM | https://10.0.1.202:3443 | Ollama web interface (SSL) ⭐ |
+| Nginx SSL | Harbor VM | https://10.0.1.202:3443 | SSL termination |
+| Portainer | Harbor VM | https://10.0.1.202:9443 | Container management |
+| HomeLab MCP | Harbor VM | http://10.0.1.202:8080/sse | Infrastructure MCP server |
+
+### Ollama Models Available
+
+| Model | Size | Purpose | Status |
+|-------|------|---------|--------|
+| **requirements-agent:latest** | 4.7 GB | Phase 1: Requirements extraction ⭐ | Production-ready |
+| **claude-refiner:latest** | 4.7 GB | Phase 2: JSON translation ⭐ | Production-ready |
+| llama3:8b | 4.7 GB | General purpose (vanilla) | Available |
+| llama2:latest | 3.8 GB | Older general purpose | Available |
+
+---
+
+## Updated Lessons Learned
+
+### 10. Native Platform Integration Simplifies Architecture
+Open WebUI's native MCP support eliminated need for complex sidecar services. Before building custom solutions, check if platform already supports the integration method (MCP, webhooks, plugins).
+
+### 11. Open Source Means 100% Customization Possible
+MIT license allows full modification for internal use. Forking is always an option, but test upstream first to understand actual customization needs before committing to maintenance burden.
+
+### 12. Research Before Building
+Discovering Open WebUI MCP support after planning sidecar approach saved significant development time. Always research platform capabilities thoroughly before designing custom integrations.
+
+### 13. Document for Handoff
+Creating comprehensive handoff documentation enables specialized agents to continue work efficiently. Include: mission, research findings, implementation steps, testing procedures, and success criteria.
+
+---
+
+## GitHub Activity (Updated)
+
+**Issue Created:**
+- Issue #436: "Investigate Open WebUI MCP Integration for Enhanced Workflow" (cc-project-management)
+
+**Commits:**
+- `7694d42`: Implement two-phase Claude CLI workflow with Ollama local models
+- `b473b18`: Add signals.log to .gitignore
+
+---
+
+## Next Session Focus
+
+**Immediate:**
+- Re-evaluate HomeLab MCP server structure
+- Prepare for MCP development agent handoff
+- Document current MCP server implementation
+
+**Future:**
+- MCP development agent implements Whisper tools
+- Test MCP integration in Open WebUI
+- Decide on Open WebUI customization approach (upstream vs fork)
+
+---
+
+*Session documented by HomeLab Specialist Agent*
+*Total session duration: Extended (context near full)*
+*Ready for handoff to MCP development agent*
+
