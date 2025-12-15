@@ -1,8 +1,29 @@
-# HomeLab Equipment Inventory Database
+# HomeLab Database System
 
-SQLite database system for managing HomeLab equipment inventory with automation support.
+**Location:** `/home/anthony/ccpm-workspace/HomeLab/database/`
 
-## Overview
+This directory contains TWO separate SQLite databases for HomeLab management:
+
+1. **homelab.db** - Infrastructure management (VMs, network, services)
+2. **homelab_inventory.db** - Equipment inventory with automation support
+
+---
+
+## Database 1: homelab.db (Infrastructure Management)
+
+**Purpose:** VM/infrastructure management for Proxmox environment
+
+**Tables:**
+- audit_log, credentials, proxmox_hosts, virtual_machines
+- backups, network_config, services
+
+**Records:** 21 total (as of 2025-12-15)
+
+---
+
+## Database 2: homelab_inventory.db (Equipment Inventory)
+
+**Purpose:** Equipment cataloging, calibration tracking, network topology
 
 This database system replaces the markdown-based inventory with a queryable SQLite database that supports:
 
@@ -43,7 +64,7 @@ Pre-built views for common queries:
 Import data from the markdown inventory:
 
 ```bash
-cd /home/anthony/homelab/database
+cd /home/anthony/ccpm-workspace/HomeLab/database
 python3 import_inventory.py
 ```
 
