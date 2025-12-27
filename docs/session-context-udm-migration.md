@@ -57,8 +57,12 @@ After restarting Claude Code:
 | **Container Password** | `MCPserver2350` |
 | **Docker Image** | `ghcr.io/sirkirby/unifi-network-mcp:latest` |
 | **Docker Port** | 3000 (internal) |
-| **Nginx Proxy Port** | 8080 (external - fixes Host header) |
-| **SSE Endpoint** | `http://10.0.1.159:8080/sse` |
+| **Nginx HTTP Port** | 8080 (Claude Code CLI) |
+| **Nginx HTTPS Port** | 8443 (self-signed, local only) |
+| **Cloudflare Tunnel** | `https://mcp.unmanned-systems.uk/sse` |
+| **Tunnel ID** | 3d770e65-6f08-4421-aea4-9540df951eca |
+| **HTTP Endpoint** | `http://10.0.1.159:8080/sse` (local) |
+| **HTTPS Endpoint** | `https://mcp.unmanned-systems.uk/sse` (recommended) |
 | **Tools Available** | 81 UniFi network tools |
 
 ### Container Environment Variables
@@ -75,7 +79,7 @@ UNIFI_MCP_HTTP_ENABLED=true
 UNIFI_MCP_HTTP_FORCE=true
 ```
 
-### .mcp.json Configuration
+### Claude Code Configuration (HTTP)
 
 File: `/home/anthony/ccpm-workspace/HomeLab/.mcp.json`
 
@@ -90,10 +94,28 @@ File: `/home/anthony/ccpm-workspace/HomeLab/.mcp.json`
 }
 ```
 
+### Claude Desktop Configuration (Cloudflare Tunnel)
+
+Claude Desktop requires HTTPS with a valid certificate. Use the Cloudflare Tunnel URL:
+
+```
+https://mcp.unmanned-systems.uk/sse
+```
+
+| Field | Value |
+|-------|-------|
+| **Name** | `unifi` |
+| **Remote MCP server URL** | `https://mcp.unmanned-systems.uk/sse` |
+| **OAuth Client ID** | *leave blank* |
+| **OAuth Client Secret** | *leave blank* |
+
+**Note:** Valid SSL certificate provided by Cloudflare. Works from anywhere.
+
 ### Nginx Proxy Configuration
 
 An nginx reverse proxy is required because the MCP Python library validates the Host header.
-The proxy runs on port 8080 and forwards to Docker on port 3000 with `Host: localhost`.
+- **Port 8080 (HTTP):** For Claude Code CLI
+- **Port 8443 (HTTPS):** For Claude Desktop (self-signed SSL cert)
 
 Config file: `/etc/nginx/sites-available/mcp-proxy`
 
