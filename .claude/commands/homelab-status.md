@@ -4,53 +4,51 @@ Quick status overview of the HomeLab environment.
 
 ---
 
-## Step 1: CCPM Status
+## Step 1: GitHub Issues
 
 ```bash
-echo "=== CCPM Server ==="
-curl -s http://localhost:8080/api/health | jq -r '.status // "DOWN"'
-```
-
----
-
-## Step 2: Sprint Status
-
-```bash
-echo ""
-echo "=== Current Sprint ==="
-curl -s "http://localhost:8080/api/sprints?project_id=5" | jq -r '.[] | select(.status == "active" or .status == "planned") | "Sprint \(.sprint_id): \(.sprint_name) [\(.status)]"'
-```
-
----
-
-## Step 3: Pending Tasks
-
-```bash
-echo ""
-echo "=== Pending Tasks ==="
-curl -s "http://localhost:8080/api/todos?project_id=5" | jq -r '.[] | select(.status != "status:complete") | "[\(.id)] \(.title) - \(.status)"'
-```
-
----
-
-## Step 4: GitHub Issues
-
-```bash
-echo ""
 echo "=== Open GitHub Issues ==="
-gh issue list --repo unmanned-systems-uk/homelab --state open --limit 5
+gh issue list --repo unmanned-systems-uk/homelab --state open --limit 10
 ```
 
 ---
 
-## Step 5: Network Snapshot
+## Step 2: SCPI Equipment
 
 ```bash
 echo ""
-echo "=== Key Network Devices ==="
-for ip in 1 53 113; do
-  ping -c 1 -W 1 10.0.1.$ip &>/dev/null && echo "10.0.1.$ip: UP" || echo "10.0.1.$ip: DOWN"
+echo "=== SCPI Equipment ==="
+for addr in "101:5025:DMM" "105:5555:Load" "106:5555:Scope" "111:5025:PSU1" "120:5555:AWG" "138:5025:PSU2"; do
+  ip="10.0.1.${addr%%:*}"
+  rest="${addr#*:}"
+  port="${rest%%:*}"
+  name="${rest#*:}"
+  timeout 1 bash -c "echo > /dev/tcp/$ip/$port" 2>/dev/null && echo "$name ($ip): UP" || echo "$name ($ip): DOWN"
 done
+```
+
+---
+
+## Step 3: Key Network Devices
+
+```bash
+echo ""
+echo "=== Network Devices ==="
+for entry in "1:UDM-Pro" "53:Pi5-DPM" "113:Jetson" "251:NAS"; do
+  ip="10.0.1.${entry%%:*}"
+  name="${entry#*:}"
+  ping -c 1 -W 1 $ip &>/dev/null && echo "$name ($ip): UP" || echo "$name ($ip): DOWN"
+done
+```
+
+---
+
+## Step 4: Recent Sessions
+
+```bash
+echo ""
+echo "=== Recent Session Summaries ==="
+ls -1 docs/session-summary-*.md 2>/dev/null | tail -3 || echo "None found"
 ```
 
 ---
@@ -59,10 +57,9 @@ done
 
 Present a summary table:
 
-| System | Status |
-|--------|--------|
-| CCPM Server | OK/DOWN |
-| Sprint | Name (status) |
-| Tasks | X pending |
-| Issues | X open |
-| Network | Key devices up/down |
+| Category | Status |
+|----------|--------|
+| GitHub Issues | X open |
+| SCPI Equipment | X/6 online |
+| Network Devices | Key devices up/down |
+| Last Session | Date or None |

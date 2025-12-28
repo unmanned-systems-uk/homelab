@@ -1,14 +1,28 @@
 # HomeLab
 
-AI-focused home lab infrastructure management with CCPM integration.
+Home lab infrastructure management with AI/ML focus.
 
 ## Overview
 
-Design, deploy, and develop home lab systems with a focus on:
-- AI/ML model development and training
-- CCPM project management integration
-- Versatile infrastructure automation
+Design, deploy, and manage home lab systems:
 
-## Project ID
+- Infrastructure automation (Proxmox, Docker, Ansible)
+- SCPI test equipment automation
+- Network management (UniFi)
+- AI/ML development environments
+- Equipment inventory tracking
 
-CCPM Project ID: 5
+## Quick Start
+
+Run `/start-homelab` in Claude Code to activate the HomeLab agent.
+
+## Documentation
+
+- `docs/hardware-inventory.md` - Equipment catalog
+- `docs/server-stack-architecture.md` - Infrastructure design
+- `docs/udm-pro-migration-complete.md` - Network configuration
+- `docs/learning-hub.md` - AI/ML resources
+
+## Repository
+
+GitHub: [unmanned-systems-uk/homelab](https://github.com/unmanned-systems-uk/homelab)

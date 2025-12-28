@@ -2,14 +2,14 @@
 
 ## Overview
 
-This document describes how to configure the UniFi Network MCP server for Claude Code and Claude Desktop.
+This document describes how to configure the UniFi Network MCP server for Claude Code.
 
 **MCP Server:** `@sirkirby/unifi-network-mcp`
-**Controller:** 10.0.1.2:8443 (UniFi Controller v7.2.97)
+**Controller:** UDM Pro at 10.0.1.1
 
 ---
 
-## Linux (Claude Code)
+## Configuration
 
 **Config Location:** `/home/anthony/ccpm-workspace/HomeLab/.mcp.json`
 
@@ -20,8 +20,8 @@ This document describes how to configure the UniFi Network MCP server for Claude
       "command": "npx",
       "args": ["-y", "@sirkirby/unifi-network-mcp"],
       "env": {
-        "UNIFI_HOST": "https://10.0.1.2:8443",
-        "UNIFI_USERNAME": "<username>",
+        "UNIFI_HOST": "https://10.0.1.1",
+        "UNIFI_USERNAME": "admin",
         "UNIFI_PASSWORD": "<password>",
         "UNIFI_SITE": "default"
       }
@@ -34,68 +34,73 @@ This document describes how to configure the UniFi Network MCP server for Claude
 
 ---
 
-## Windows (Claude Desktop)
+## Available MCP Tools
 
-**Config Location:** `%APPDATA%\Claude\claude_desktop_config.json`
+| Tool | Purpose |
+|------|---------|
+| `unifi_list_devices` | List all UniFi devices (switches, APs) |
+| `unifi_get_clients` | Get connected clients |
+| `unifi_get_networks` | Get network/VLAN configurations |
+| `unifi_get_firewalls` | Get firewall rules |
+| `unifi_get_port_forwards` | Get port forwarding rules |
 
-Add the UniFi server to your existing config:
+---
 
-```json
-{
-  "mcpServers": {
-    "unifi": {
-      "command": "npx",
-      "args": ["-y", "@sirkirby/unifi-network-mcp"],
-      "env": {
-        "UNIFI_HOST": "https://10.0.1.2:8443",
-        "UNIFI_USERNAME": "<username>",
-        "UNIFI_PASSWORD": "<password>",
-        "UNIFI_SITE": "default"
-      }
-    }
-  }
-}
-```
+## Prerequisites
 
-### Windows Prerequisites
-
-1. **Node.js** must be installed: https://nodejs.org/
+1. **Node.js** must be installed
 2. **npx** must be in PATH (comes with Node.js)
-3. Network access to 10.0.1.2:8443 from Windows PC
+3. Network access to 10.0.1.1 (UDM Pro)
 
 ---
 
 ## Verification
 
-After configuration, restart Claude Code/Desktop and verify MCP tools are available:
+After configuration, restart Claude Code and verify MCP tools are available.
 
-- `unifi_list_devices` - List all UniFi devices
-- `unifi_get_clients` - Get connected clients
-- `unifi_get_networks` - Get network configurations
+Test commands:
+- List devices: Use `unifi_list_devices`
+- Get clients: Use `unifi_get_clients`
+
+---
+
+## Network Details
+
+| Device | IP | Role |
+|--------|-----|------|
+| UDM Pro | 10.0.1.1 | Gateway + Controller |
+
+**VLANs:**
+| VLAN | Subnet | Purpose |
+|------|--------|---------|
+| - | 10.0.1.0/24 | Default (SCPI, servers) |
+| 10 | 10.0.10.0/24 | Management |
+| 20 | 10.0.20.0/24 | Media |
+| 30 | 10.0.30.0/24 | IoT |
+| 50 | 10.0.50.0/24 | Lab |
 
 ---
 
 ## Security Notes
 
 1. **Never commit credentials** - `.mcp.json` is gitignored
-2. **Consider dedicated account** - Create read-only UniFi admin for MCP
-3. **Network access** - Only works when on 10.0.1.x network
+2. **Network access** - Only works when on 10.0.1.x network
 
 ---
 
 ## Troubleshooting
 
 ### Connection Failed
-- Verify 10.0.1.2:8443 is accessible: `curl -sk https://10.0.1.2:8443/status`
+- Verify 10.0.1.1 is accessible: `ping 10.0.1.1`
 - Check credentials are correct
-- Ensure UNIFI_SITE is "default" (or your site name)
+- UDM Pro uses port 443 (not 8443 like CloudKey)
 
 ### MCP Not Loading
-- Restart Claude Code/Desktop completely
-- Check Node.js is installed: `node --version`
-- Check npx is available: `npx --version`
+- Restart Claude Code completely
+- Check Node.js: `node --version`
+- Check npx: `npx --version`
 
 ---
 
-*Created: 2024-12-27*
-*Related: GitHub Issue #17 - USG to UDM Migration*
+*Updated: 2025-12-28 - Migrated from CloudKey to UDM Pro*
+*Related: GitHub Issue #17*

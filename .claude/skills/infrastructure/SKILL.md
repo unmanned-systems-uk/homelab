@@ -17,6 +17,7 @@ This skill provides patterns and best practices for HomeLab infrastructure work 
 - Bash (infrastructure commands)
 - WebFetch, WebSearch
 - Context7 MCP
+- UniFi MCP
 
 ---
 
@@ -63,14 +64,15 @@ networks:
     external: true
 ```
 
-### VLAN Assignments (Planned)
+### VLAN Assignments (Active)
 
 | VLAN | Name | Purpose | Subnet |
 |------|------|---------|--------|
-| 10 | Management | Proxmox, switches, APs | 10.0.10.x |
-| 20 | Servers | VMs, containers | 10.0.20.x |
-| 30 | IoT | Home Assistant devices | 10.0.30.x |
-| 40 | Lab | SCPI equipment, dev | 10.0.40.x |
+| - | Default | SCPI equipment, servers | 10.0.1.x |
+| 10 | Management | Switches, APs | 10.0.10.x |
+| 20 | Media | Media devices | 10.0.20.x |
+| 30 | IoT | Smart home devices | 10.0.30.x |
+| 50 | Lab | Development, testing | 10.0.50.x |
 
 ### File Naming
 
@@ -100,3 +102,42 @@ Use Context7 MCP for documentation:
 - Proxmox: `/proxmox/pve-docs`
 - Docker: `/docker/docs`
 - Ansible: `/ansible/ansible`
+
+---
+
+## UniFi MCP
+
+**Controller:** UDM Pro at 10.0.1.1
+
+### Available Tools
+
+| Tool | Purpose |
+|------|---------|
+| `unifi_list_devices` | List all UniFi devices (switches, APs) |
+| `unifi_get_clients` | Get connected clients |
+| `unifi_get_networks` | Get network/VLAN configurations |
+| `unifi_get_firewalls` | Get firewall rules |
+| `unifi_get_port_forwards` | Get port forwarding rules |
+
+### Network Queries
+
+```
+# List all devices
+unifi_list_devices
+
+# Get client list
+unifi_get_clients
+
+# Get VLAN/network config
+unifi_get_networks
+```
+
+### Infrastructure Devices (VLAN 10)
+
+| Device | IP | Type |
+|--------|-----|------|
+| US 48 Dev Office | 10.0.10.10 | Switch |
+| US 24 Dev Desk | 10.0.10.11 | Switch |
+| US 24 PoE Studio | 10.0.10.12 | Switch |
+| US 24 PoE Cinema | 10.0.10.13 | Switch |
+| AC Pro APs | 10.0.10.20-26 | Access Points |
