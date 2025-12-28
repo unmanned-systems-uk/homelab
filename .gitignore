@@ -32,3 +32,4 @@ Thumbs.db
 .claude/master/signals.log
 .mcp.json
 firebase-debug.log
+agents-venv/
