@@ -1,7 +1,7 @@
 # HomeLab Agent Startup
 
 **Agent:** HomeLab
-**Working Directory:** `/home/anthony/ccpm-workspace/HomeLab`
+**Working Directory:** `/home/anthony/HomeLab`
 
 ---
 

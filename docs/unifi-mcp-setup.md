@@ -11,7 +11,7 @@ This document describes how to configure the UniFi Network MCP server for Claude
 
 ## Configuration
 
-**Config Location:** `/home/anthony/ccpm-workspace/HomeLab/.mcp.json`
+**Config Location:** `/home/anthony/HomeLab/.mcp.json`
 
 ```json
 {

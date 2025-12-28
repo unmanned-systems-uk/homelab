@@ -3,7 +3,7 @@
 ## Project
 
 - **Repo:** `unmanned-systems-uk/homelab`
-- **Directory:** `/home/anthony/ccpm-workspace/HomeLab`
+- **Directory:** `/home/anthony/HomeLab`
 - **Stack:** Infrastructure as Code, Docker, AI/ML, SCPI Automation
 
 ---

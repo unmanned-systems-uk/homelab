@@ -11,7 +11,7 @@
 |-------|-------|
 | Agent Name | HomeLab |
 | GitHub Repo | `unmanned-systems-uk/homelab` |
-| Working Directory | `/home/anthony/ccpm-workspace/HomeLab` |
+| Working Directory | `/home/anthony/HomeLab` |
 
 ---
 
