@@ -12,13 +12,16 @@ The HomeLab agent manages 7 infrastructure domains.
 |------|---------|
 | Controller | UDM Pro built-in |
 | Access | https://10.0.1.1 |
-| Credentials | admin / USAdman2350!@ |
-| MCP | UniFi MCP via `@sirkirby/unifi-network-mcp` |
+| Credentials | HomeLab-Agent / HomeAdman2350 |
+| MCP Endpoint | `https://mcp.unmanned-systems.uk/sse` |
+| MCP Host | Harbor VM (10.0.1.202:3001) |
 
-**MCP Tools:**
+**MCP Tools (81 available):**
 - `unifi_list_devices` - List switches, APs
 - `unifi_get_clients` - Connected clients
 - `unifi_get_networks` - VLANs, subnets
+- `unifi_list_firewall_policies` - Firewall rules
+- `unifi_get_network_health` - Network status
 
 **VLANs:**
 | VLAN | Subnet | Purpose |
@@ -70,12 +73,24 @@ echo "*IDN?" | nc -w 2 10.0.1.101 5025
 
 | Host | IP | Status |
 |------|-----|--------|
-| Legacy-i7 | 10.0.1.130 | Active |
+| pve-ai (i9-10940X) | 10.0.1.200 | Active |
 | R640 | TBD | Planned |
+
+**VMs:**
+| VMID | Name | Purpose |
+|------|------|---------|
+| 100 | whisper-tts | AI/TTS services |
+| 101 | harbor | Docker + MCP services |
+| 102 | VM 102 | General |
+| 210 | ccpm-v2 | CCPM development |
+
+**GPU Passthrough Ready:**
+- GTX 1080 Ti (IOMMU Group 2)
+- Quadro K5000 (IOMMU Group 4)
 
 **Tasks:**
 - VM architecture planning
-- GPU passthrough (1080 Ti)
+- GPU passthrough configuration
 - Container deployment
 - Backup to NAS (10.0.1.251)
 
