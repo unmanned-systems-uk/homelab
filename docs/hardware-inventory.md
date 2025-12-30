@@ -18,7 +18,7 @@
 | Name | Model | CPU/SoC | RAM | Storage | OS | IP Address | Purpose | Notes |
 |------|-------|---------|-----|---------|-----|------------|---------|-------|
 | DPM-Air | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | 10.0.1.53 | DPM Air-Side | payload-manager Docker |
-| HA-Pi5 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | TBD | M.2 SSD | HAOS | 10.0.1.150 | Home Assistant | Was SDR-Pi5, repurposed 2025-12-30 |
+| HA-Pi5 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | Micron 2300 NVMe 512GB | HAOS 16.3 | 10.0.1.150 | Home Assistant | LIVE - repurposed from SDR 2025-12-30 |
 | SDR-Pi5-2 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | TBD | M.2 SSD | - | TBD | SDR Radio | In use |
 | Pi4-Spare1 | Raspberry Pi 4 B | BCM2711 Quad Cortex-A72 | TBD | TBD | - | - | Available | Check RAM |
 | Pi4-Spare2 | Raspberry Pi 4 | BCM2711 Quad Cortex-A72 | TBD | TBD | - | - | Available | Under heatsink, has 3.5mm jack |
