@@ -18,9 +18,13 @@
 | Name | Model | CPU/SoC | RAM | Storage | OS | IP Address | Purpose | Notes |
 |------|-------|---------|-----|---------|-----|------------|---------|-------|
 | DPM-Air | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | 10.0.1.53 | DPM Air-Side | payload-manager Docker |
-| SDR-Pi5-1 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | TBD | SDR Radio Testing | |
-| SDR-Pi5-2 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | TBD | SDR Radio Testing | |
-| HA-Pi5 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 16GB | TBD | HAOS | 10.0.1.150 | Home Assistant | NEW 2025-12-30, top-spec model |
+| HA-Pi5 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | TBD | M.2 SSD | HAOS | 10.0.1.150 | Home Assistant | Was SDR-Pi5, repurposed 2025-12-30 |
+| SDR-Pi5-2 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | TBD | M.2 SSD | - | TBD | SDR Radio | In use |
+| Pi4-Spare1 | Raspberry Pi 4 B | BCM2711 Quad Cortex-A72 | TBD | TBD | - | - | Available | Check RAM |
+| Pi4-Spare2 | Raspberry Pi 4 | BCM2711 Quad Cortex-A72 | TBD | TBD | - | - | Available | Under heatsink, has 3.5mm jack |
+| CM4-IO | Compute Module 4 | BCM2711 Quad Cortex-A72 | TBD | SD only | - | - | Available | Older I/O board, no M.2 |
+| CM5-IO | Compute Module 5 | BCM2712 Quad Cortex-A76 | 16GB | M.2 | - | - | Reserved | PoE carrier, save for demanding project |
+| BPI-ZWave | BPI M2 Berry V1.0 | Allwinner V40 | - | - | - | TBD | Z-Wave Bridge | Z-Wave hat installed, HA integration |
 
 ### AI Development Boards (moved from AI/ML section for clarity)
 | Name | Model | Compute | RAM | Storage | OS | IP Address | Purpose | Notes |
