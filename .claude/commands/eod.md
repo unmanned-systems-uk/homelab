@@ -1,9 +1,10 @@
 # End of Day (EOD) Session Report
 
-Generate comprehensive session report and log to database.
+Generate comprehensive session report and log to BOTH database AND markdown files (belt and braces).
 
-**API Endpoint:** `http://localhost:8000/api/v1`
-**Database:** `ccpm_db` @ 10.0.1.251:5433
+**Database:** `ccpm_db` @ 10.0.1.251:5433 (User: `ccpm`, Password: `CcpmDb2025Secure`)
+**Agent ID:** `aaaaaaaa-bbbb-cccc-dddd-222222222222` (HomeLab-Agent)
+**Markdown:** `docs/session-summary-YYYY-MM-DD.md`
 
 ---
 
@@ -13,32 +14,22 @@ Collect git statistics for the session:
 
 ```bash
 echo "=== Session Metrics ==="
+SESSION_DATE=$(date +%Y-%m-%d)
 
 # Get git statistics since start of day
-SINCE_TIME=$(date +"%Y-%m-%d 00:00:00")
-
-# Files modified today
-FILES_MODIFIED=$(git diff --name-only --since="$SINCE_TIME" | wc -l)
-echo "Files modified: $FILES_MODIFIED"
-
-# Commits made today
-COMMITS_TODAY=$(git log --since="$SINCE_TIME" --oneline | wc -l)
+COMMITS_TODAY=$(git log --since="$SESSION_DATE 00:00:00" --oneline 2>/dev/null | wc -l)
 echo "Commits today: $COMMITS_TODAY"
 
-# Lines added/removed
-git log --since="$SINCE_TIME" --numstat --pretty="%H" | awk 'NF==3 {plus+=$1; minus+=$2} END {printf("Lines added: %d\nLines removed: %d\n", plus, minus)}'
+FILES_MODIFIED=$(git log --since="$SESSION_DATE 00:00:00" --name-only --pretty="" 2>/dev/null | sort -u | grep -v '^$' | wc -l)
+echo "Files modified: $FILES_MODIFIED"
 
-# Tests run (check for test results)
-if [ -f "/tmp/test-results.json" ]; then
-  TESTS_RUN=$(jq '.total_tests // 0' /tmp/test-results.json)
-  TESTS_PASSED=$(jq '.passed_tests // 0' /tmp/test-results.json)
-  echo "Tests run: $TESTS_RUN"
-  echo "Tests passed: $TESTS_PASSED"
-else
-  TESTS_RUN=0
-  TESTS_PASSED=0
-  echo "No test results found"
-fi
+# Lines added/removed
+git log --since="$SESSION_DATE 00:00:00" --numstat --pretty="" 2>/dev/null | awk 'NF==3 {plus+=$1; minus+=$2} END {printf("Lines added: %d\nLines removed: %d\n", plus, minus)}'
+
+# Get commit list
+echo ""
+echo "=== Commits ==="
+git log --since="$SESSION_DATE 00:00:00" --oneline 2>/dev/null | head -10
 ```
 
 ---
@@ -47,14 +38,12 @@ fi
 
 ```bash
 echo ""
-echo "=== GitHub Tasks ==="
-
-# List issues worked on today (commented on or updated)
+echo "=== GitHub Tasks Updated Today ==="
 gh issue list --repo unmanned-systems-uk/homelab \
   --state all \
   --limit 20 \
-  --json number,title,state,labels,updatedAt \
-  --jq '.[] | select(.updatedAt | fromdateiso8601 > (now - 86400)) | "\(.number): \(.title) [\(.state)]"'
+  --json number,title,state,updatedAt \
+  --jq '.[] | select(.updatedAt | fromdateiso8601 > (now - 86400)) | "#\(.number): \(.title) [\(.state)]"' 2>/dev/null
 ```
 
 ---
@@ -84,264 +73,193 @@ echo "Network Devices: $NETWORK_UP/3 online (UDM Pro, Proxmox, NAS)"
 
 ---
 
-## STEP 4: Create Session Report
+## STEP 4: Write to Database (Primary)
 
-Generate session report data:
+Insert session report directly to PostgreSQL:
 
-```python
-#!/usr/bin/env python3
-import requests
-import subprocess
-import json
-from datetime import datetime, timezone
-import os
+```bash
+SESSION_DATE=$(date +%Y-%m-%d)
+SESSION_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-API_BASE = "http://localhost:8000/api/v1"
-AGENT_ID = os.getenv("HOMELAB_AGENT_ID", "00000000-0000-0000-0000-000000000001")
-SESSION_DATE = datetime.now().date().isoformat()
+# Get metrics for SQL
+COMMITS=$(git log --since="$SESSION_DATE 00:00:00" --oneline 2>/dev/null | wc -l)
+FILES=$(git log --since="$SESSION_DATE 00:00:00" --name-only --pretty="" 2>/dev/null | sort -u | grep -v '^$' | wc -l)
+TASKS=$(gh issue list --repo unmanned-systems-uk/homelab --state all --limit 20 --json updatedAt --jq '[.[] | select(.updatedAt | fromdateiso8601 > (now - 86400))] | length' 2>/dev/null || echo "0")
 
-# Gather git metrics
-def get_git_metrics():
-    since_time = datetime.now().replace(hour=0, minute=0, second=0).strftime("%Y-%m-%d %H:%M:%S")
-
-    # Files modified
-    files = subprocess.run(
-        ["git", "diff", "--name-only", f"--since={since_time}"],
-        capture_output=True, text=True
-    )
-    files_modified = len([f for f in files.stdout.strip().split('\n') if f])
-
-    # Commits
-    commits = subprocess.run(
-        ["git", "log", f"--since={since_time}", "--oneline"],
-        capture_output=True, text=True
-    )
-    commits_made = len([c for c in commits.stdout.strip().split('\n') if c])
-
-    # Get commit details
-    commit_list = []
-    if commits_made > 0:
-        log = subprocess.run(
-            ["git", "log", f"--since={since_time}", "--pretty=format:%H|%s", "-10"],
-            capture_output=True, text=True
-        )
-        for line in log.stdout.strip().split('\n'):
-            if '|' in line:
-                hash, msg = line.split('|', 1)
-                commit_list.append({"hash": hash[:8], "message": msg})
-
-    # Lines changed
-    stats = subprocess.run(
-        ["git", "log", f"--since={since_time}", "--numstat", "--pretty=%H"],
-        capture_output=True, text=True
-    )
-    lines_added = 0
-    lines_removed = 0
-    for line in stats.stdout.split('\n'):
-        parts = line.split()
-        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
-            lines_added += int(parts[0])
-            lines_removed += int(parts[1])
-
-    return {
-        "files_modified": files_modified,
-        "commits_made": commits_made,
-        "commit_list": commit_list,
-        "lines_added": lines_added,
-        "lines_removed": lines_removed
-    }
-
-# Get GitHub tasks
-def get_github_tasks():
-    try:
-        result = subprocess.run(
-            ["gh", "issue", "list", "--repo", "unmanned-systems-uk/homelab",
-             "--state", "all", "--limit", "20", "--json", "number,title,state,updatedAt"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            issues = json.loads(result.stdout)
-            # Filter for today
-            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            recent = []
-            for issue in issues:
-                updated = datetime.fromisoformat(issue['updatedAt'].replace('Z', '+00:00'))
-                if updated >= today:
-                    recent.append(f"#{issue['number']}: {issue['title']} [{issue['state']}]")
-            return recent
-        return []
-    except Exception as e:
-        print(f"Error getting GitHub issues: {e}")
-        return []
-
-# Create session report
-def create_session_report():
-    metrics = get_git_metrics()
-    tasks = get_github_tasks()
-
-    # Build session data
-    session_data = {
-        "agent_id": AGENT_ID,
-        "agent_tag": "[HomeLab]",
-        "trigger_type": "manual",
-        "session_date": SESSION_DATE,
-        "session_started_at": datetime.now(timezone.utc).replace(
-            hour=9, minute=0, second=0, microsecond=0
-        ).isoformat(),
-        "session_ended_at": datetime.now(timezone.utc).isoformat(),
-        "status": "completed",
-        "summary": f"HomeLab session: {metrics['commits_made']} commits, {metrics['files_modified']} files modified, {len(tasks)} GitHub tasks updated",
-        "completed_items": tasks,
-        "in_progress_items": [],
-        "blockers": [],
-        "handoff_notes": "Session complete. All infrastructure operational.",
-        "total_tasks_touched": len(tasks),
-        "tasks_completed": len([t for t in tasks if '[closed]' in t or '[CLOSED]' in t]),
-        "files_modified": metrics['files_modified'],
-        "commits_made": metrics['commits_made'],
-        "tests_run": 0,
-        "tests_passed": 0,
-        "total_tokens": 0,
-        "input_tokens": 0,
-        "output_tokens": 0
-    }
-
-    # Calculate duration (assume 9am start time for now)
-    start = datetime.now(timezone.utc).replace(hour=9, minute=0, second=0)
-    end = datetime.now(timezone.utc)
-    session_data["duration_minutes"] = int((end - start).total_seconds() / 60)
-
-    try:
-        # Create session report
-        response = requests.post(
-            f"{API_BASE}/session-reports",
-            json=session_data,
-            timeout=10
-        )
-
-        if response.status_code == 201:
-            report = response.json()
-            report_id = report["id"]
-            print(f"\n✅ Session report created: {report_id}")
-
-            # Add commits if any
-            for commit in metrics['commit_list']:
-                try:
-                    requests.post(
-                        f"{API_BASE}/session-reports/{report_id}/commits",
-                        json={
-                            "commit_hash": commit['hash'],
-                            "commit_message": commit['message'],
-                            "files_changed": 0,
-                            "insertions": 0,
-                            "deletions": 0
-                        },
-                        timeout=5
-                    )
-                except Exception as e:
-                    print(f"Warning: Failed to log commit {commit['hash']}: {e}")
-
-            return {
-                "report_id": report_id,
-                "metrics": metrics,
-                "tasks": tasks,
-                "session_data": session_data
-            }
-        else:
-            print(f"❌ Failed to create session report: {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to session logging API at localhost:8000")
-        print("Is the backend service running?")
-        return None
-    except Exception as e:
-        print(f"❌ Error creating session report: {e}")
-        return None
-
-# Run
-if __name__ == "__main__":
-    result = create_session_report()
-    if result:
-        # Save to file
-        report_file = f"/tmp/eod-report-{SESSION_DATE}.json"
-        with open(report_file, 'w') as f:
-            json.dump(result, f, indent=2)
-        print(f"\n📄 Report saved to: {report_file}")
-
-        # Copy to CC-Share if mounted
-        if os.path.exists("/mnt/CC-Share"):
-            import shutil
-            shutil.copy(report_file, f"/mnt/CC-Share/eod-{SESSION_DATE}.json")
-            print(f"📤 Report copied to CC-Share")
+# Insert to database
+PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db << EOF
+INSERT INTO session_reports (
+    id, agent_id, agent_tag, trigger_type, session_date,
+    session_started_at, session_ended_at, duration_minutes, status,
+    summary, completed_items, in_progress_items, blockers, handoff_notes,
+    total_tasks_touched, tasks_completed, files_modified, commits_made,
+    tests_run, tests_passed, created_at, updated_at
+) VALUES (
+    gen_random_uuid(),
+    'aaaaaaaa-bbbb-cccc-dddd-222222222222',
+    '[HomeLab]',
+    'manual',
+    '$SESSION_DATE',
+    '$SESSION_DATE'||'T09:00:00Z',
+    '$SESSION_END',
+    $(( ($(date +%s) - $(date -d "$SESSION_DATE 09:00:00" +%s)) / 60 )),
+    'processed',
+    'HomeLab EOD session report - $COMMITS commits, $FILES files modified',
+    '[]'::jsonb,
+    '[]'::jsonb,
+    '[]'::jsonb,
+    'Session complete. Review summary markdown for details.',
+    $TASKS, 0, $FILES, $COMMITS, 0, 0, NOW(), NOW()
+) RETURNING id, session_date, status;
+EOF
 ```
+
+**Note:** After database insert, gather the session summary, blockers, and handoff notes interactively to update the record or include in markdown.
 
 ---
 
-## STEP 5: Generate EOD Summary
+## STEP 5: Write Markdown File (Backup)
 
-Present the end-of-day summary:
+Create session summary markdown - this should include the full narrative of what was accomplished:
 
-```
+```bash
+SESSION_DATE=$(date +%Y-%m-%d)
+cat > docs/session-summary-$SESSION_DATE.md << 'MARKDOWN'
 # End of Day Report - {DATE}
 
 ## Session Overview
 - **Duration:** X hours Y minutes
 - **Status:** Completed
-- **Report ID:** {report_id}
+- **Database Report ID:** {report_id}
+
+---
 
 ## Work Completed
+
 ### Git Activity
-- **Commits:** X
-- **Files Modified:** Y
-- **Lines Added:** +Z
-- **Lines Removed:** -W
+| Metric | Value |
+|--------|-------|
+| Commits | X |
+| Files Modified | Y |
+| Lines Added | +Z |
+| Lines Removed | -W |
 
-### GitHub Tasks
-{List of tasks worked on}
+### Commits Made
+```
+{commit list}
+```
 
-### Infrastructure
-- SCPI Equipment: X/6 online
-- Network: Y/3 core devices online
+### GitHub Tasks Updated
+{list of issues touched}
+
+---
+
+## Infrastructure Status
+- **SCPI Equipment:** X/6 online
+- **Network Devices:** Y/3 online
+
+---
 
 ## Summary
-{Generated summary}
+{narrative summary of session accomplishments}
 
-## Handoff Notes
-{Any notes for next session}
+## Blockers / Issues
+{any blockers encountered}
+
+## Handoff Notes for Next Session
+{priorities and context for next session}
 
 ---
 
-**Session logged to database:** ccpm_db @ 10.0.1.251:5433
-**Report saved to:** /mnt/CC-Share/eod-{DATE}.json
+*HomeLab Agent - End of Day Report*
+*Database: ccpm_db @ 10.0.1.251:5433*
+*Generated: {timestamp}*
+MARKDOWN
 ```
 
+**After creating the template, fill in the actual values based on gathered metrics.**
+
 ---
 
-## Environment Variables
+## STEP 6: Log Commits to Database
 
-Required for session logging:
+Add individual commits to session_commits table:
 
 ```bash
-# Set in ~/.bashrc or session
-export HOMELAB_AGENT_ID="your-agent-uuid-here"
-```
+SESSION_DATE=$(date +%Y-%m-%d)
 
-Generate agent ID if needed:
-```python
-import uuid
-print(f"export HOMELAB_AGENT_ID={uuid.uuid4()}")
+# Get the session report ID we just created
+REPORT_ID=$(PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db -t -c \
+  "SELECT id FROM session_reports WHERE agent_tag='[HomeLab]' AND session_date='$SESSION_DATE' ORDER BY created_at DESC LIMIT 1;")
+
+# Insert each commit
+git log --since="$SESSION_DATE 00:00:00" --pretty=format:"%h|%s|%aI" 2>/dev/null | while IFS='|' read hash msg timestamp; do
+  PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db -c \
+    "INSERT INTO session_commits (session_report_id, commit_sha, commit_message, commit_author, branch_name, committed_at, files_changed, insertions, deletions)
+     VALUES ('$REPORT_ID', '$hash', '$(echo "$msg" | sed "s/'/''/g")', 'HomeLab-Agent', 'main', '$timestamp', 0, 0, 0)
+     ON CONFLICT DO NOTHING;" 2>/dev/null
+done
 ```
 
 ---
 
-## Files Created
+## STEP 7: Commit Session Summary
 
-- `/tmp/eod-report-{DATE}.json` - Local copy
-- `/mnt/CC-Share/eod-{DATE}.json` - Network share copy (if mounted)
-- Database record in `ccpm_db.session_reports`
+```bash
+SESSION_DATE=$(date +%Y-%m-%d)
+git add docs/session-summary-$SESSION_DATE.md
+git commit -m "docs: Add session summary for $SESSION_DATE
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+```
 
 ---
 
-*HomeLab Agent - End of Day reporting with database integration*
+## Verification
+
+After EOD, verify both storage locations:
+
+```bash
+SESSION_DATE=$(date +%Y-%m-%d)
+
+echo "=== Database Check ==="
+PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db -c \
+  "SELECT id, session_date, status, commits_made, files_modified FROM session_reports WHERE agent_tag='[HomeLab]' ORDER BY created_at DESC LIMIT 1;"
+
+echo ""
+echo "=== Markdown Check ==="
+ls -la docs/session-summary-$SESSION_DATE.md 2>/dev/null || echo "Markdown not found"
+```
+
+---
+
+## Database Connection Details
+
+| Parameter | Value |
+|-----------|-------|
+| Host | 10.0.1.251 |
+| Port | 5433 |
+| Database | ccpm_db |
+| User | ccpm |
+| Password | CcpmDb2025Secure |
+| Agent ID | aaaaaaaa-bbbb-cccc-dddd-222222222222 |
+| Agent Tag | [HomeLab] |
+
+---
+
+## CC-Share Mount (if needed)
+
+```bash
+# Mount CC-Share for shared access
+echo "053210" | sudo -S mount -t cifs //10.0.1.251/CC-Share /mnt/cc-share \
+  -o username=homelab-agent,password=Homelab053210,uid=1000,gid=1000
+
+# Copy report to share
+cp docs/session-summary-$(date +%Y-%m-%d).md /mnt/cc-share/
+```
+
+---
+
+*HomeLab Agent - End of Day reporting with database + markdown backup*
