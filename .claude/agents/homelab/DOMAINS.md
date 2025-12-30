@@ -198,6 +198,8 @@ echo "*IDN?" | nc -w 2 10.0.1.101 5025
 | Proxmox | Via Pulse API (VMs, containers, resources) |
 | Synology NAS | Storage, SMART, Docker status |
 | Home Assistant | Smart device count, offline status |
+| Portainer | Docker containers (https://10.0.1.202:9443) |
+| Ollama/Open WebUI | Local LLM status (https://10.0.1.202:3443) |
 
 **Firewall Rules Required (UDM Pro):**
 ```
