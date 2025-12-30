@@ -16,7 +16,7 @@ Run `/start-homelab` to load full agent context.
 
 ## Domains
 
-The HomeLab agent manages 7 infrastructure domains:
+The HomeLab agent manages 8 infrastructure domains:
 
 | # | Domain | Description |
 |---|--------|-------------|
@@ -27,6 +27,7 @@ The HomeLab agent manages 7 infrastructure domains:
 | 5 | Equipment Inventory | Hardware tracking |
 | 6 | AI/ML Operations | GPU, Jetson, models |
 | 7 | Home Automation | Home Assistant (planned) |
+| 8 | **HomeGate** | Unified infrastructure dashboard (i3 @ 10.0.1.50) |
 
 ---
 
@@ -80,6 +81,7 @@ gh issue edit <number> --add-label "in-progress" --repo unmanned-systems-uk/home
 | NAS | 10.0.1.251 | Synology DS1621 |
 | Jetson | 10.0.1.113 | Orin NX |
 | Pi5 DPM | 10.0.1.53 | Raspberry Pi 5 |
+| HomeGate Host | 10.0.1.50 | i3 Mini PC (Ubuntu 24.04) |
 
 ---
 
@@ -169,6 +171,28 @@ HomeLab/
 | `docs/learning-hub.md` | AI/ML resources |
 | `docs/session-summary-*.md` | Session records |
 | `docs/udm-pro-migration-complete.md` | Network config |
+
+---
+
+## Related Projects
+
+### HomeGate - Infrastructure Dashboard
+
+| Item | Details |
+|------|---------|
+| Repository | `unmanned-systems-uk/homegate` |
+| Local Path | `/home/homelab/HomeGate` |
+| Host | i3 Mini PC @ 10.0.1.50 |
+| Status | Design Complete |
+
+**Features:** Persistent SSH terminals, infrastructure monitoring, role-based access, smart alerting
+
+**Integration:** Reuses UniFi MCP (`https://mcp.unmanned-systems.uk/sse`), monitors SCPI equipment, Proxmox VMs, NAS
+
+```bash
+# HomeGate issues
+gh issue list --repo unmanned-systems-uk/homegate
+```
 
 ---
 

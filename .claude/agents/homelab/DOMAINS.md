@@ -1,6 +1,6 @@
 # HomeLab Domains
 
-The HomeLab agent manages 7 infrastructure domains.
+The HomeLab agent manages 8 infrastructure domains.
 
 ---
 
@@ -162,6 +162,64 @@ echo "*IDN?" | nc -w 2 10.0.1.101 5025
 - HA container deployment
 - Device integration
 - Automation scripts
+
+---
+
+## 8. HomeGate - Infrastructure Dashboard
+
+**Primary:** Unified homelab command center
+
+| Item | Details |
+|------|---------|
+| Repository | `unmanned-systems-uk/homegate` |
+| Local Path | `/home/homelab/HomeGate` |
+| Deployment Host | i3 Mini PC @ 10.0.1.50 |
+| Status | Design Complete - Ready for Implementation |
+
+**Core Features:**
+- **Persistent SSH Terminal** - Web-based SSH that survives device switching
+- **Infrastructure Monitoring** - UniFi, Proxmox, Synology, Home Assistant, SCPI
+- **Role-Based Access** - Admin (full control) vs Family (PIN + HA links)
+- **Smart Alerting** - Email/SMS for critical infrastructure issues
+
+**Technology Stack:**
+| Component | Technology |
+|-----------|------------|
+| Frontend | React 18 + TypeScript + xterm.js |
+| Backend | Node.js 20 + Express + Socket.io |
+| Database | PostgreSQL 15+ (existing server) |
+| Tunnel | Cloudflare Tunnel (homegate.domain.com) |
+
+**Integration with HomeLab:**
+| Integration | Details |
+|-------------|---------|
+| UniFi MCP | Reuse existing `https://mcp.unmanned-systems.uk/sse` |
+| SCPI Monitoring | ICMP/HTTP health checks for 6 instruments |
+| Proxmox | Via Pulse API (VMs, containers, resources) |
+| Synology NAS | Storage, SMART, Docker status |
+| Home Assistant | Smart device count, offline status |
+
+**Firewall Rules Required (UDM Pro):**
+```
+Allow 10.0.1.50 → 10.0.10.0/24  # Management VLAN (switches, APs)
+Allow 10.0.1.50 → 10.0.30.0/24  # IoT VLAN (smart home)
+Allow 10.0.1.50 → 10.0.50.0/24  # Lab VLAN (SCPI equipment)
+```
+
+**Implementation Milestones:**
+| Milestone | Issues | Duration |
+|-----------|--------|----------|
+| 1. Foundation | #1-10 | 2-3 weeks |
+| 2. Monitoring | #11-20 | 2-3 weeks |
+| 3. SSH Terminal | #21-30 | 2-3 weeks |
+| 4. Production | #31-40 | 1-2 weeks |
+
+**Tasks:**
+- Implement 40 planned GitHub issues
+- Configure cross-VLAN firewall rules
+- Deploy to i3 host @ 10.0.1.50
+- Integrate with existing UniFi MCP
+- Set up Cloudflare Tunnel
 
 ---
 
