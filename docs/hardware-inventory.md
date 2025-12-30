@@ -1,6 +1,6 @@
 # HomeLab Hardware Inventory
 
-**Last Updated:** 2025-12-13
+**Last Updated:** 2025-12-30
 **Status:** In Progress
 
 ---
@@ -20,6 +20,7 @@
 | DPM-Air | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | 10.0.1.53 | DPM Air-Side | payload-manager Docker |
 | SDR-Pi5-1 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | TBD | SDR Radio Testing | |
 | SDR-Pi5-2 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 8GB | SSD | - | TBD | SDR Radio Testing | |
+| HA-Pi5 | Raspberry Pi 5 | BCM2712 Quad Cortex-A76 | 16GB | TBD | HAOS | 10.0.1.150 | Home Assistant | NEW 2025-12-30, top-spec model |
 
 ### AI Development Boards (moved from AI/ML section for clarity)
 | Name | Model | Compute | RAM | Storage | OS | IP Address | Purpose | Notes |
@@ -29,7 +30,9 @@
 ### Mini PCs / NUCs
 | Name | Model | CPU | RAM | Storage | OS | IP Address | Purpose | Notes |
 |------|-------|-----|-----|---------|-----|------------|---------|-------|
-| - | - | - | - | - | - | - | - | None currently |
+| Jumper-1 | Jumper Mini PC | TBD | TBD | TBD | Windows 10 | TBD | TBD | Ethernet issue - HAOS won't see NIC |
+| Jumper-2 | Jumper Mini PC | TBD | TBD | TBD | TBD | TBD | TBD | Spare - untested |
+| Jumper-3 | Jumper Mini PC | TBD | TBD | TBD | TBD | TBD | TBD | Spare - untested |
 
 ---
 
