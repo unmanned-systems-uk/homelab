@@ -4,7 +4,11 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
-# Install dependencies
+# Install dependencies (including PostgreSQL client libraries)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -18,12 +22,13 @@ COPY infrastructure/ /app/infrastructure/
 RUN useradd -m -u 1000 mcpuser && \
     chown -R mcpuser:mcpuser /app
 
-# Database will be mounted at /data/homelab.db
-RUN mkdir -p /data && chown mcpuser:mcpuser /data
-
 USER mcpuser
 
-# Environment variables (can be overridden)
-ENV HOMELAB_DB_PATH=/data/homelab.db
+# PostgreSQL connection settings (can be overridden)
+ENV HOMELAB_DB_HOST=10.0.1.251
+ENV HOMELAB_DB_PORT=5433
+ENV HOMELAB_DB_NAME=homelab_db
+ENV HOMELAB_DB_USER=ccpm
+# Password should be set via Docker secrets or environment
 
 CMD ["python", "homelab_server.py"]

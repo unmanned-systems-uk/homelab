@@ -1,8 +1,27 @@
 # HomeLab PostgreSQL Database Schema
 
-**Version:** 1.0.0
-**Date:** 2025-12-30
+**Version:** 1.1.0
+**Date:** 2025-12-31
+**Status:** DEPLOYED AND POPULATED
 **Purpose:** Comprehensive logging and state management for HomeLab infrastructure
+
+---
+
+## Connection Details
+
+| Parameter | Value |
+|-----------|-------|
+| Host | 10.0.1.251 (ccpm-nas) |
+| Port | 5433 |
+| Database | homelab_db |
+| User | ccpm |
+
+**Current Data:**
+- 18 devices (Compute, SCPI, Network, Storage, AI/ML)
+- 6 SCPI equipment entries
+- 4 networks (Default, IoT, Lab, Guest)
+- 8 services
+- 4 firewall rules
 
 ---
 

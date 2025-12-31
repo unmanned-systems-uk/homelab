@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
 HomeLab Infrastructure MCP Server.
-Provides tool access to VMs, credentials, services, and network config.
+Provides tool access to devices, credentials, services, SCPI equipment, and network config.
+Uses PostgreSQL database (homelab_db) on NAS.
 """
 
 import os
 import sys
-import sqlite3
 import logging
 import httpx
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 from contextlib import contextmanager
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from fastmcp import FastMCP
 
 # Configure logging
@@ -23,11 +24,14 @@ logger = logging.getLogger("homelab-mcp")
 # Initialize MCP server
 mcp = FastMCP("homelab-infra")
 
-# Database path (mounted into container or local)
-DB_PATH = os.environ.get(
-    "HOMELAB_DB_PATH",
-    "/data/homelab.db"
-)
+# PostgreSQL connection settings
+DB_CONFIG = {
+    "host": os.environ.get("HOMELAB_DB_HOST", "10.0.1.251"),
+    "port": int(os.environ.get("HOMELAB_DB_PORT", 5433)),
+    "database": os.environ.get("HOMELAB_DB_NAME", "homelab_db"),
+    "user": os.environ.get("HOMELAB_DB_USER", "ccpm"),
+    "password": os.environ.get("HOMELAB_DB_PASSWORD", "CcpmDb2025Secure"),
+}
 
 # Optional: Encryption key for credentials
 DB_KEY = os.environ.get("HOMELAB_DB_KEY")
@@ -37,23 +41,32 @@ DB_KEY = os.environ.get("HOMELAB_DB_KEY")
 
 @contextmanager
 def get_db():
-    """Get database connection with row factory."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    """Get PostgreSQL database connection with dict cursor."""
+    conn = psycopg2.connect(**DB_CONFIG)
     try:
         yield conn
     finally:
         conn.close()
 
 
-def log_audit(conn: sqlite3.Connection, action: str, target_type: str,
-              target_id: int, user: str = "mcp-agent", details: str = None):
+def log_audit(conn, action: str, target_type: str, target_id: str,
+              user: str = "mcp-agent", details: str = None):
     """Log an audit entry for security-sensitive actions."""
-    conn.execute("""
-        INSERT INTO audit_log (action, target_type, target_id, user, details, ip_address)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (action, target_type, target_id, user, details or "success", "docker"))
-    conn.commit()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO audit.system_events (event_type, severity, source, message, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                action,
+                'INFO',
+                'homelab-mcp',
+                f"{action} on {target_type}:{target_id}",
+                {"user": user, "details": details or "success", "target_type": target_type, "target_id": str(target_id)}
+            ))
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to log audit event: {e}")
 
 
 def get_encryption():
@@ -61,7 +74,6 @@ def get_encryption():
     if not DB_KEY:
         return None
     try:
-        # Try importing from mounted infrastructure path
         sys.path.insert(0, "/app/infrastructure")
         from db.encryption import CredentialEncryption
         return CredentialEncryption(DB_KEY.encode() if isinstance(DB_KEY, str) else DB_KEY)
@@ -70,187 +82,193 @@ def get_encryption():
         return None
 
 
-# ==================== VM Tools ====================
+# ==================== Device Tools ====================
 
 @mcp.tool()
-def homelab_list_vms(status: str = None) -> list[dict]:
+def homelab_list_devices(category: str = None, status: str = None, device_type: str = None) -> list[dict]:
     """
-    List all virtual machines in the HomeLab.
+    List all devices in the HomeLab infrastructure.
 
     Args:
-        status: Optional filter by status (running, stopped, template)
+        category: Filter by category (Compute, SCPI, Network, Storage, AI/ML)
+        status: Filter by status (online, offline, unknown)
+        device_type: Filter by type (server, sbc, router, nas, test-equipment, etc.)
 
     Returns:
-        List of VMs with their details
+        List of devices with their details
     """
     with get_db() as conn:
-        query = """
-            SELECT vm.*, h.node_name as host_name, h.ip_address as host_ip
-            FROM virtual_machines vm
-            LEFT JOIN proxmox_hosts h ON vm.host_id = h.id
-            WHERE 1=1
-        """
-        params = []
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            query = """
+                SELECT device_id, device_name, device_type, category, model, manufacturer,
+                       primary_ip, status, location, notes, metadata, created_at
+                FROM infrastructure.devices
+                WHERE 1=1
+            """
+            params = []
 
-        if status:
-            query += " AND vm.status = ?"
-            params.append(status)
+            if category:
+                query += " AND category = %s"
+                params.append(category)
+            if status:
+                query += " AND status = %s"
+                params.append(status)
+            if device_type:
+                query += " AND device_type = %s"
+                params.append(device_type)
 
-        query += " ORDER BY vm.host_id, vm.vm_id"
-        rows = conn.execute(query, params).fetchall()
+            query += " ORDER BY category, device_name"
+            cur.execute(query, params)
+            rows = cur.fetchall()
 
-        return [dict(row) for row in rows]
+            return [dict(row) for row in rows]
 
 
 @mcp.tool()
-def homelab_get_vm(vm_id: int = None, name: str = None) -> dict:
+def homelab_get_device(name: str = None, ip: str = None) -> dict:
     """
-    Get detailed information about a specific VM.
+    Get detailed information about a specific device.
 
     Args:
-        vm_id: Proxmox VM ID (e.g., 100)
-        name: VM name (e.g., "whisper")
+        name: Device name (e.g., "HA-Pi5", "DMM-Keithley")
+        ip: Device IP address (e.g., "10.0.1.150")
 
     Returns:
-        VM details including host info, or error if not found
+        Device details including metadata, or error if not found
     """
-    if vm_id is None and name is None:
-        return {"error": "Must provide either vm_id or name"}
+    if name is None and ip is None:
+        return {"error": "Must provide either name or ip"}
 
     with get_db() as conn:
-        if vm_id is not None:
-            row = conn.execute("""
-                SELECT vm.*, h.node_name as host_name, h.ip_address as host_ip
-                FROM virtual_machines vm
-                LEFT JOIN proxmox_hosts h ON vm.host_id = h.id
-                WHERE vm.vm_id = ?
-            """, (vm_id,)).fetchone()
-        else:
-            row = conn.execute("""
-                SELECT vm.*, h.node_name as host_name, h.ip_address as host_ip
-                FROM virtual_machines vm
-                LEFT JOIN proxmox_hosts h ON vm.host_id = h.id
-                WHERE vm.name = ?
-            """, (name,)).fetchone()
-
-        if row:
-            return dict(row)
-        return {"error": f"VM not found: {vm_id or name}"}
-
-
-# ==================== Credential Tools ====================
-
-@mcp.tool()
-def homelab_get_credentials(target: str) -> dict:
-    """
-    Get credentials for a target. ALL ACCESS IS AUDIT LOGGED.
-
-    Args:
-        target: Target in format "type:id" (e.g., "vm:100", "host:1", "service:piper-tts")
-
-    Returns:
-        Credentials including username, password (decrypted), ssh_key, ip
-    """
-    parts = target.split(":", 1)
-    if len(parts) != 2:
-        return {"error": "Invalid target format. Use 'type:id' (e.g., vm:100)"}
-
-    target_type, target_id = parts
-    encryption = get_encryption()
-
-    with get_db() as conn:
-        if target_type == "vm":
-            row = conn.execute("""
-                SELECT c.*, vm.ip_address, vm.name
-                FROM credentials c
-                JOIN virtual_machines vm ON c.target_id = vm.id
-                WHERE c.target_type = 'vm' AND vm.vm_id = ?
-            """, (int(target_id),)).fetchone()
-        elif target_type == "host":
-            row = conn.execute("""
-                SELECT c.*, h.ip_address, h.node_name as name
-                FROM credentials c
-                JOIN proxmox_hosts h ON c.target_id = h.id
-                WHERE c.target_type = 'host' AND h.id = ?
-            """, (int(target_id),)).fetchone()
-        elif target_type == "service":
-            row = conn.execute("""
-                SELECT c.*, s.url, s.service_name as name
-                FROM credentials c
-                JOIN services s ON c.target_id = s.id
-                WHERE c.target_type = 'service' AND s.service_name = ?
-            """, (target_id,)).fetchone()
-        else:
-            log_audit(conn, "credential_access_failed", target_type, 0,
-                     details=f"invalid_type={target_type}")
-            return {"error": f"Unknown target type: {target_type}"}
-
-        if not row:
-            log_audit(conn, "credential_access_failed", target_type,
-                     int(target_id) if target_id.isdigit() else 0,
-                     details="not_found")
-            return {"error": f"No credentials found for {target}"}
-
-        result = dict(row)
-
-        # Decrypt password if encryption available
-        password = None
-        if result.get("password_encrypted"):
-            if encryption:
-                try:
-                    password = encryption.decrypt(result["password_encrypted"])
-                except Exception as e:
-                    logger.error(f"Decryption failed: {e}")
-                    password = "[DECRYPTION_FAILED]"
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if name:
+                cur.execute("""
+                    SELECT * FROM infrastructure.devices WHERE device_name = %s
+                """, (name,))
             else:
-                password = "[ENCRYPTED - KEY NOT AVAILABLE]"
+                cur.execute("""
+                    SELECT * FROM infrastructure.devices WHERE primary_ip = %s
+                """, (ip,))
 
-        # Log successful access
-        log_audit(conn, "credential_access", target_type,
-                 result.get("target_id", 0), details="success")
+            row = cur.fetchone()
+            if row:
+                return dict(row)
+            return {"error": f"Device not found: {name or ip}"}
 
-        return {
-            "target": target,
-            "name": result.get("name"),
-            "ip": result.get("ip_address"),
-            "username": result.get("username"),
-            "password": password,
-            "ssh_key": result.get("ssh_key_path"),
-            "auth_type": result.get("auth_type"),
-            "is_root": bool(result.get("is_root", False))
-        }
+
+# ==================== SCPI Equipment Tools ====================
+
+@mcp.tool()
+def homelab_list_scpi_equipment(instrument_type: str = None) -> list[dict]:
+    """
+    List all SCPI-enabled test equipment.
+
+    Args:
+        instrument_type: Filter by type (DMM, Oscilloscope, AWG, Electronic Load, Power Supply)
+
+    Returns:
+        List of SCPI equipment with connection details and capabilities
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            query = """
+                SELECT d.device_name, d.model, d.manufacturer, d.primary_ip, d.status,
+                       e.scpi_address, e.scpi_protocol, e.instrument_type,
+                       e.measurement_capabilities, e.max_voltage, e.max_current,
+                       e.max_power, e.channels, e.metadata
+                FROM scpi.equipment e
+                JOIN infrastructure.devices d ON e.equipment_id = d.device_id
+                WHERE 1=1
+            """
+            params = []
+
+            if instrument_type:
+                query += " AND e.instrument_type = %s"
+                params.append(instrument_type)
+
+            query += " ORDER BY d.device_name"
+            cur.execute(query, params)
+            rows = cur.fetchall()
+
+            return [dict(row) for row in rows]
+
+
+@mcp.tool()
+def homelab_get_scpi_connection(device_name: str) -> dict:
+    """
+    Get SCPI connection details for a test equipment device.
+
+    Args:
+        device_name: Name of the SCPI device (e.g., "DMM-Keithley", "Load-DC")
+
+    Returns:
+        Connection details including IP, port, protocol
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT d.device_name, d.model, d.primary_ip, d.status,
+                       e.scpi_address, e.scpi_protocol, e.instrument_type,
+                       (d.metadata->>'scpi_port')::int as scpi_port
+                FROM scpi.equipment e
+                JOIN infrastructure.devices d ON e.equipment_id = d.device_id
+                WHERE d.device_name = %s
+            """, (device_name,))
+
+            row = cur.fetchone()
+            if row:
+                result = dict(row)
+                return {
+                    "device": result["device_name"],
+                    "model": result["model"],
+                    "ip": str(result["primary_ip"]) if result["primary_ip"] else None,
+                    "port": result["scpi_port"],
+                    "protocol": result["scpi_protocol"],
+                    "status": result["status"],
+                    "type": result["instrument_type"],
+                    "connection_string": result["scpi_address"]
+                }
+            return {"error": f"SCPI device not found: {device_name}"}
 
 
 # ==================== Service Tools ====================
 
 @mcp.tool()
-def homelab_list_services(vm_id: int = None) -> list[dict]:
+def homelab_list_services(device_name: str = None, service_type: str = None) -> list[dict]:
     """
     List all services in the HomeLab.
 
     Args:
-        vm_id: Optional Proxmox VM ID to filter services
+        device_name: Filter by hosting device name
+        service_type: Filter by service type (automation, database, management, etc.)
 
     Returns:
         List of services with their details
     """
     with get_db() as conn:
-        query = """
-            SELECT s.*, vm.name as vm_name, vm.ip_address as vm_ip, vm.vm_id
-            FROM services s
-            LEFT JOIN virtual_machines vm ON s.vm_id = vm.id
-            WHERE 1=1
-        """
-        params = []
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            query = """
+                SELECT s.service_id, s.service_name, s.service_type, s.port, s.protocol,
+                       s.endpoint, s.health_check_url, s.status, s.notes,
+                       d.device_name, d.primary_ip as device_ip
+                FROM infrastructure.services s
+                LEFT JOIN infrastructure.devices d ON s.device_id = d.device_id
+                WHERE 1=1
+            """
+            params = []
 
-        if vm_id:
-            query += " AND vm.vm_id = ?"
-            params.append(vm_id)
+            if device_name:
+                query += " AND d.device_name = %s"
+                params.append(device_name)
+            if service_type:
+                query += " AND s.service_type = %s"
+                params.append(service_type)
 
-        query += " ORDER BY s.service_name"
-        rows = conn.execute(query, params).fetchall()
+            query += " ORDER BY s.service_name"
+            cur.execute(query, params)
+            rows = cur.fetchall()
 
-        return [dict(row) for row in rows]
+            return [dict(row) for row in rows]
 
 
 @mcp.tool()
@@ -265,111 +283,107 @@ def homelab_check_service_health(service_name: str) -> dict:
         Health status including response time
     """
     with get_db() as conn:
-        row = conn.execute("""
-            SELECT s.*, vm.ip_address as vm_ip
-            FROM services s
-            LEFT JOIN virtual_machines vm ON s.vm_id = vm.id
-            WHERE s.service_name = ?
-        """, (service_name,)).fetchone()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT s.*, d.primary_ip as device_ip
+                FROM infrastructure.services s
+                LEFT JOIN infrastructure.devices d ON s.device_id = d.device_id
+                WHERE s.service_name = %s
+            """, (service_name,))
 
-        if not row:
-            return {"error": f"Service not found: {service_name}"}
+            row = cur.fetchone()
+            if not row:
+                return {"error": f"Service not found: {service_name}"}
 
-        service = dict(row)
+            service = dict(row)
 
-        # Build health check URL
-        if service.get("health_endpoint"):
-            health_url = service["health_endpoint"]
-        elif service.get("url"):
-            health_url = f"{service['url']}/health"
-        elif service.get("vm_ip") and service.get("port"):
-            protocol = service.get("protocol", "http")
-            health_url = f"{protocol}://{service['vm_ip']}:{service['port']}/health"
-        else:
-            return {
-                "service": service_name,
-                "status": "unknown",
-                "error": "No health endpoint configured"
-            }
+            # Build health check URL
+            if service.get("health_check_url"):
+                health_url = service["health_check_url"]
+            elif service.get("endpoint"):
+                health_url = f"{service['endpoint']}/health"
+            elif service.get("device_ip") and service.get("port"):
+                protocol = service.get("protocol", "http")
+                health_url = f"{protocol}://{service['device_ip']}:{service['port']}/health"
+            else:
+                return {
+                    "service": service_name,
+                    "status": "unknown",
+                    "error": "No health endpoint configured"
+                }
 
-        # Perform health check
-        try:
-            start = datetime.now()
-            response = httpx.get(health_url, timeout=5.0)
-            elapsed = (datetime.now() - start).total_seconds() * 1000
+            # Perform health check
+            try:
+                start = datetime.now()
+                response = httpx.get(health_url, timeout=5.0)
+                elapsed = (datetime.now() - start).total_seconds() * 1000
 
-            return {
-                "service": service_name,
-                "url": health_url,
-                "status": "healthy" if response.status_code == 200 else "unhealthy",
-                "status_code": response.status_code,
-                "response_time_ms": round(elapsed, 2)
-            }
-        except httpx.TimeoutException:
-            return {
-                "service": service_name,
-                "url": health_url,
-                "status": "timeout",
-                "error": "Request timed out after 5s"
-            }
-        except Exception as e:
-            return {
-                "service": service_name,
-                "url": health_url,
-                "status": "error",
-                "error": str(e)
-            }
-
-
-# ==================== Host Tools ====================
-
-@mcp.tool()
-def homelab_list_hosts() -> list[dict]:
-    """
-    List all Proxmox hosts in the HomeLab.
-
-    Returns:
-        List of hosts with their details
-    """
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT * FROM proxmox_hosts ORDER BY node_name
-        """).fetchall()
-
-        return [dict(row) for row in rows]
-
-
-@mcp.tool()
-def homelab_get_host(host_id: int = None, name: str = None) -> dict:
-    """
-    Get detailed information about a Proxmox host.
-
-    Args:
-        host_id: Host database ID
-        name: Host node name
-
-    Returns:
-        Host details or error if not found
-    """
-    if host_id is None and name is None:
-        return {"error": "Must provide either host_id or name"}
-
-    with get_db() as conn:
-        if host_id:
-            row = conn.execute(
-                "SELECT * FROM proxmox_hosts WHERE id = ?", (host_id,)
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT * FROM proxmox_hosts WHERE node_name = ?", (name,)
-            ).fetchone()
-
-        if row:
-            return dict(row)
-        return {"error": f"Host not found: {host_id or name}"}
+                return {
+                    "service": service_name,
+                    "url": health_url,
+                    "status": "healthy" if response.status_code == 200 else "unhealthy",
+                    "status_code": response.status_code,
+                    "response_time_ms": round(elapsed, 2)
+                }
+            except httpx.TimeoutException:
+                return {
+                    "service": service_name,
+                    "url": health_url,
+                    "status": "timeout",
+                    "error": "Request timed out after 5s"
+                }
+            except Exception as e:
+                return {
+                    "service": service_name,
+                    "url": health_url,
+                    "status": "error",
+                    "error": str(e)
+                }
 
 
 # ==================== Network Tools ====================
+
+@mcp.tool()
+def homelab_list_networks() -> list[dict]:
+    """
+    List all networks/VLANs in the HomeLab.
+
+    Returns:
+        List of networks with VLAN IDs, subnets, and purposes
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT network_id, network_name, vlan_id, subnet, gateway,
+                       dhcp_enabled, purpose, security_zone, notes
+                FROM network.networks
+                ORDER BY COALESCE(vlan_id, 0), network_name
+            """)
+            rows = cur.fetchall()
+
+            return [dict(row) for row in rows]
+
+
+@mcp.tool()
+def homelab_list_firewall_rules() -> list[dict]:
+    """
+    List firewall rules configured in the HomeLab.
+
+    Returns:
+        List of firewall rules with source/destination and actions
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT rule_id, rule_name, enabled, action, protocol,
+                       source_network, destination_network, rule_index, notes
+                FROM network.firewall_rules
+                ORDER BY rule_index
+            """)
+            rows = cur.fetchall()
+
+            return [dict(row) for row in rows]
+
 
 @mcp.tool()
 def homelab_lookup_ip(ip: str) -> dict:
@@ -377,62 +391,178 @@ def homelab_lookup_ip(ip: str) -> dict:
     Look up what's allocated to an IP address.
 
     Args:
-        ip: IP address to look up (e.g., "10.0.1.201")
+        ip: IP address to look up (e.g., "10.0.1.150")
 
     Returns:
-        Allocation details including hostname and type
+        Allocation details including device name and type
     """
     with get_db() as conn:
-        # Check network_config table
-        row = conn.execute("""
-            SELECT * FROM network_config WHERE ip_address = ?
-        """, (ip,)).fetchone()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check devices table
+            cur.execute("""
+                SELECT device_id, device_name, device_type, category, status, notes
+                FROM infrastructure.devices
+                WHERE primary_ip = %s
+            """, (ip,))
 
-        if row:
+            row = cur.fetchone()
+            if row:
+                device = dict(row)
+                return {
+                    "ip_address": ip,
+                    "allocated_to": device["device_name"],
+                    "device_type": device["device_type"],
+                    "category": device["category"],
+                    "status": device["status"],
+                    "notes": device["notes"]
+                }
+
+            return {"ip_address": ip, "allocated_to": None, "status": "unallocated"}
+
+
+# ==================== Credential Tools ====================
+
+@mcp.tool()
+def homelab_get_credentials(target: str) -> dict:
+    """
+    Get credentials for a target device or service. ALL ACCESS IS AUDIT LOGGED.
+
+    Args:
+        target: Target in format "device:<name>" or "service:<name>"
+                (e.g., "device:ccpm-nas", "service:PostgreSQL")
+
+    Returns:
+        Credentials including username, password (if decryption key available)
+    """
+    parts = target.split(":", 1)
+    if len(parts) != 2:
+        return {"error": "Invalid target format. Use 'device:<name>' or 'service:<name>'"}
+
+    target_type, target_name = parts
+    encryption = get_encryption()
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if target_type == "device":
+                cur.execute("""
+                    SELECT c.*, d.device_name, d.primary_ip
+                    FROM credentials.system_credentials c
+                    JOIN infrastructure.devices d ON c.device_id = d.device_id
+                    WHERE d.device_name = %s
+                """, (target_name,))
+            elif target_type == "service":
+                cur.execute("""
+                    SELECT c.*, s.service_name, d.primary_ip
+                    FROM credentials.system_credentials c
+                    JOIN infrastructure.services s ON c.service_id = s.service_id
+                    JOIN infrastructure.devices d ON s.device_id = d.device_id
+                    WHERE s.service_name = %s
+                """, (target_name,))
+            else:
+                log_audit(conn, "credential_access_failed", target_type, target_name,
+                         details=f"invalid_type={target_type}")
+                return {"error": f"Unknown target type: {target_type}. Use 'device' or 'service'"}
+
+            row = cur.fetchone()
+            if not row:
+                log_audit(conn, "credential_access_failed", target_type, target_name,
+                         details="not_found")
+                return {"error": f"No credentials found for {target}"}
+
             result = dict(row)
-            result["source"] = "network_config"
-            return result
 
-        # Check VMs
-        vm = conn.execute("""
-            SELECT vm.*, h.node_name as host_name
-            FROM virtual_machines vm
-            LEFT JOIN proxmox_hosts h ON vm.host_id = h.id
-            WHERE vm.ip_address = ?
-        """, (ip,)).fetchone()
+            # Decrypt password if encryption available
+            password = None
+            if result.get("password_encrypted"):
+                if encryption:
+                    try:
+                        password = encryption.decrypt(result["password_encrypted"])
+                    except Exception as e:
+                        logger.error(f"Decryption failed: {e}")
+                        password = "[DECRYPTION_FAILED]"
+                else:
+                    password = "[ENCRYPTED - KEY NOT AVAILABLE]"
 
-        if vm:
-            vm_dict = dict(vm)
+            # Log successful access
+            log_audit(conn, "credential_access", target_type, target_name, details="success")
+
             return {
-                "ip_address": ip,
-                "allocated_to": f"vm:{vm_dict['vm_id']} ({vm_dict['name']})",
-                "hostname": vm_dict["name"],
-                "type": "virtual_machine",
-                "source": "virtual_machines"
+                "target": target,
+                "name": result.get("device_name") or result.get("service_name"),
+                "ip": str(result.get("primary_ip")) if result.get("primary_ip") else None,
+                "username": result.get("username"),
+                "password": password,
+                "ssh_key": result.get("ssh_key_path"),
+                "auth_type": result.get("auth_type"),
             }
 
-        # Check hosts
-        host = conn.execute("""
-            SELECT * FROM proxmox_hosts WHERE ip_address = ?
-        """, (ip,)).fetchone()
 
-        if host:
-            host_dict = dict(host)
+# ==================== Summary Tools ====================
+
+@mcp.tool()
+def homelab_infrastructure_summary() -> dict:
+    """
+    Get a summary of all HomeLab infrastructure.
+
+    Returns:
+        Summary with device counts, online status, and key systems
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Device counts by category
+            cur.execute("""
+                SELECT category, status, COUNT(*) as count
+                FROM infrastructure.devices
+                GROUP BY category, status
+                ORDER BY category, status
+            """)
+            device_stats = cur.fetchall()
+
+            # SCPI equipment status
+            cur.execute("""
+                SELECT d.status, COUNT(*) as count
+                FROM scpi.equipment e
+                JOIN infrastructure.devices d ON e.equipment_id = d.device_id
+                GROUP BY d.status
+            """)
+            scpi_stats = cur.fetchall()
+
+            # Service count
+            cur.execute("SELECT COUNT(*) as count FROM infrastructure.services")
+            service_count = cur.fetchone()["count"]
+
+            # Network count
+            cur.execute("SELECT COUNT(*) as count FROM network.networks")
+            network_count = cur.fetchone()["count"]
+
+            # Online devices with IPs
+            cur.execute("""
+                SELECT device_name, device_type, primary_ip
+                FROM infrastructure.devices
+                WHERE status = 'online' AND primary_ip IS NOT NULL
+                ORDER BY primary_ip
+            """)
+            online_devices = cur.fetchall()
+
             return {
-                "ip_address": ip,
-                "allocated_to": f"host:{host_dict['id']} ({host_dict['node_name']})",
-                "hostname": host_dict["node_name"],
-                "type": "proxmox_host",
-                "source": "proxmox_hosts"
+                "device_stats": [dict(r) for r in device_stats],
+                "scpi_stats": [dict(r) for r in scpi_stats],
+                "service_count": service_count,
+                "network_count": network_count,
+                "online_devices": [dict(r) for r in online_devices],
+                "database": {
+                    "host": DB_CONFIG["host"],
+                    "port": DB_CONFIG["port"],
+                    "name": DB_CONFIG["database"]
+                }
             }
-
-        return {"ip_address": ip, "allocated_to": None, "status": "unallocated"}
 
 
 # ==================== Run Server ====================
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("MCP_PORT", 8080))
-    logger.info(f"Starting HomeLab MCP Server with DB: {DB_PATH} on port {port}")
+    logger.info(f"Starting HomeLab MCP Server")
+    logger.info(f"Database: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
+    logger.info(f"Listening on port {port}")
     mcp.run(transport="sse", port=port, host="0.0.0.0")
