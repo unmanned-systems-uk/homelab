@@ -26,7 +26,7 @@ The HomeLab agent manages 8 infrastructure domains:
 | 4 | Infrastructure as Code | Docker, Ansible |
 | 5 | Equipment Inventory | Hardware tracking |
 | 6 | AI/ML Operations | GPU, Jetson, models |
-| 7 | Home Automation | Home Assistant (planned) |
+| 7 | Home Automation | Home Assistant @ 10.0.1.150 (Active) |
 | 8 | **HomeGate** | Unified infrastructure dashboard (i3 @ 10.0.1.50) |
 
 ---
@@ -118,6 +118,21 @@ ping -c 1 -W 1 10.0.1.1
 |------|---------|
 | **Context7** | Library documentation lookup |
 | **UniFi MCP** | Network visibility (UDM Pro @ 10.0.1.1) |
+| **Home Assistant MCP** | Smart home control (HA @ 10.0.1.150) |
+
+### Home Assistant MCP Tools
+
+```
+mcp__homeassistant__*  - Home Assistant entity control and queries
+```
+
+**Capabilities:**
+- Query entity states (lights, sensors, switches)
+- Control devices (turn on/off, set values)
+- Trigger automations and scripts
+- Access HA prompts for context
+
+**Note:** Only entities exposed via Settings > Voice Assistants > Assist are accessible.
 
 ### UniFi MCP Tools
 
@@ -192,6 +207,25 @@ HomeLab/
 ```bash
 # HomeGate issues
 gh issue list --repo unmanned-systems-uk/homegate
+```
+
+### Home Assistant
+
+| Item | Details |
+|------|---------|
+| Repository | `unmanned-systems-uk/homeassistant` |
+| Local Path | `/home/homelab/homeassistant` |
+| Host | HA-Pi5 @ 10.0.1.150:8123 |
+| OS | HAOS 16.3 on NVMe |
+| Status | Active |
+
+**For dedicated HA work:** `cd /home/homelab/homeassistant` and use `/start-ha`
+
+**Active Integrations:** Wiz (14 bulbs on IoT VLAN 10.0.30.x)
+
+```bash
+# HA issues
+gh issue list --repo unmanned-systems-uk/homeassistant
 ```
 
 ---
