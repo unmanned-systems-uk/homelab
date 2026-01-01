@@ -4,6 +4,20 @@ Switch context to Home Assistant management and development.
 
 ---
 
+## HA Repository
+
+**For dedicated HA work, switch to the HA repository:**
+
+```bash
+cd /home/homelab/homeassistant
+```
+
+**HA Repo:** `unmanned-systems-uk/homeassistant`
+**Path:** `/home/homelab/homeassistant`
+**Commands:** `/start-ha`, `/ha-status`, `/ha-integrations`
+
+---
+
 ## Home Assistant System Info
 
 | Item | Value |
