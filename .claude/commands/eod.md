@@ -2,8 +2,28 @@
 
 Generate comprehensive session report and log to BOTH database AND markdown files (belt and braces).
 
-**Database:** `ccpm_db` @ 10.0.1.251:5433 (User: `ccpm`, Password: `CcpmDb2025Secure`)
+## Database Configuration
+
+**TWO DATABASES - DON'T CONFUSE THEM:**
+
+| Database | Purpose | Use For |
+|----------|---------|---------|
+| `homelab_db` | Infrastructure data | Devices, credentials, equipment queries |
+| `ccpm_db` | Session reports | EOD reports, session_commits |
+
+### Connection Details (Both)
+
+| Parameter | Value |
+|-----------|-------|
+| Host | 10.0.1.251 |
+| Port | 5433 |
+| User | ccpm |
+| Password | CcpmDb2025Secure |
+
+### Session Reports (ccpm_db)
+
 **Agent ID:** `aaaaaaaa-bbbb-cccc-dddd-222222222222` (HomeLab-Agent)
+**Agent Tag:** `[HomeLab]`
 **Markdown:** `docs/session-summary-YYYY-MM-DD.md`
 
 ---

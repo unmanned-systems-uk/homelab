@@ -2,8 +2,26 @@
 
 Mid-session database dump - save current progress to database without ending the session.
 
-**Database:** `ccpm_db` @ 10.0.1.251:5433 (User: `ccpm`, Password: `CcpmDb2025Secure`)
-**Agent ID:** `aaaaaaaa-bbbb-cccc-dddd-222222222222` (HomeLab-Agent)
+## Database Configuration
+
+**TWO DATABASES - DON'T CONFUSE THEM:**
+
+| Database | Purpose | Use For |
+|----------|---------|---------|
+| `homelab_db` | Infrastructure data | Devices, credentials, equipment queries |
+| `ccpm_db` | Session reports | EOD reports, session_commits |
+
+### Session Reports Database: `ccpm_db`
+
+| Parameter | Value |
+|-----------|-------|
+| Host | 10.0.1.251 |
+| Port | 5433 |
+| Database | `ccpm_db` |
+| User | ccpm |
+| Password | CcpmDb2025Secure |
+| Agent ID | `aaaaaaaa-bbbb-cccc-dddd-222222222222` |
+| Agent Tag | `[HomeLab]` |
 
 ---
 

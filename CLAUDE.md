@@ -57,6 +57,58 @@ gh issue edit <number> --add-label "in-progress" --repo unmanned-systems-uk/home
 3. **TIMEOUT all network commands** (2-3 seconds max)
 4. **Document all changes** in git
 5. **Session summaries** for significant work (`docs/session-summary-YYYY-MM-DD.md`)
+6. **USE homelab_db** for all infrastructure data (NOT ccpm_db)
+
+---
+
+## HomeLab Database (CRITICAL)
+
+**ALWAYS use `homelab_db`** - this is the infrastructure database, NOT ccpm_db.
+
+| Parameter | Value |
+|-----------|-------|
+| **Host** | 10.0.1.251 |
+| **Port** | 5433 |
+| **Database** | `homelab_db` |
+| **User** | ccpm |
+| **Password** | CcpmDb2025Secure |
+
+### Quick Connect
+
+```bash
+PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d homelab_db
+```
+
+### Schemas
+
+| Schema | Purpose |
+|--------|---------|
+| `infrastructure` | Devices, services |
+| `credentials` | System credentials, SSH keys |
+| `network` | Network assignments, VLANs |
+| `virtualization` | Proxmox VMs |
+| `scpi` | Test equipment |
+| `ai_ml` | Ollama models, GPU tracking |
+| `audit` | System events log |
+
+### Common Queries
+
+```sql
+-- List all devices
+SELECT device_name, primary_ip, status FROM infrastructure.devices;
+
+-- Get device metadata (e.g., HA-Pi5)
+SELECT device_name, metadata FROM infrastructure.devices WHERE device_name = 'HA-Pi5';
+
+-- List credentials
+SELECT system_name, system_type, port FROM credentials.system_credentials;
+```
+
+### Session Reports (ccpm_db)
+
+Session reports go to `ccpm_db` (different database):
+- Agent ID: `aaaaaaaa-bbbb-cccc-dddd-222222222222` (HomeLab)
+- Agent Tag: `[HomeLab]`
 
 ---
 
