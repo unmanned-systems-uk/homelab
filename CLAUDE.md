@@ -135,6 +135,20 @@ Session reports go to `ccpm_db` (different database):
 | Pi5 DPM | 10.0.1.53 | Raspberry Pi 5 |
 | HomeGate Host | 10.0.1.50 | i3 Mini PC (Ubuntu 24.04) |
 
+### Shared Folder (cc-share)
+
+**Path:** `~/cc-share` (symlink to GVFS mount)
+
+```bash
+# Access shared files
+ls ~/cc-share/
+
+# Full GVFS path (if symlink doesn't work)
+/run/user/1000/gvfs/smb-share:server=ccpm-nas.local,share=cc-share/
+```
+
+**Note:** This is a Synology NAS SMB share mounted via GVFS (Gnome). Do NOT use `/mnt/cc-share`.
+
 ---
 
 ## Slash Commands
