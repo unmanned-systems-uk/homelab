@@ -68,7 +68,7 @@ services:
     volumes:
       - openwakeword-data:/data
     command: >
-      --preload-model ok_nabu
+      --preload-model hey_jarvis
       --custom-model-dir /data
     restart: unless-stopped
     networks:
