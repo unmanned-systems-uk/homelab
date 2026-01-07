@@ -1,0 +1,111 @@
+# ═══════════════════════════════════════════════════════════════════
+# Voice Services Stack for Whisper VM (10.0.1.201)
+# ═══════════════════════════════════════════════════════════════════
+#
+# Hybrid architecture:
+#   - Wyoming services for Home Assistant (native integration)
+#   - OpenAI-compatible API for Claude CLI and other apps
+#
+# Ports:
+#   - 10200: Wyoming Piper (TTS)
+#   - 10300: Wyoming Whisper (STT)
+#   - 10400: Wyoming OpenWakeWord (Wake Word Detection)
+#   - 8000:  OpenAI-compatible API wrapper
+#
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  # ─────────────────────────────────────────────────────────────────
+  # Wyoming Piper - Text-to-Speech
+  # ─────────────────────────────────────────────────────────────────
+  wyoming-piper:
+    image: rhasspy/wyoming-piper:latest
+    container_name: wyoming-piper
+    hostname: wyoming-piper
+    ports:
+      - "10200:10200"
+    volumes:
+      - piper-data:/data
+    command: >
+      --voice en_US-amy-medium
+      --speaker 0
+      --length-scale 1.0
+      --noise-scale 0.667
+      --noise-w-scale 0.8
+    restart: unless-stopped
+    networks:
+      - voice-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # Wyoming Faster-Whisper - Speech-to-Text
+  # ─────────────────────────────────────────────────────────────────
+  wyoming-whisper:
+    image: rhasspy/wyoming-whisper:latest
+    container_name: wyoming-whisper
+    hostname: wyoming-whisper
+    ports:
+      - "10300:10300"
+    volumes:
+      - whisper-data:/data
+    command: >
+      --model small-int8
+      --language en
+      --beam-size 1
+      --compute-type int8
+    restart: unless-stopped
+    networks:
+      - voice-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # Wyoming OpenWakeWord - Wake Word Detection
+  # ─────────────────────────────────────────────────────────────────
+  wyoming-openwakeword:
+    image: rhasspy/wyoming-openwakeword:latest
+    container_name: wyoming-openwakeword
+    hostname: wyoming-openwakeword
+    ports:
+      - "10400:10400"
+    volumes:
+      - openwakeword-data:/data
+    command: >
+      --preload-model ok_nabu
+      --custom-model-dir /data
+    restart: unless-stopped
+    networks:
+      - voice-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # OpenAI-Compatible API Wrapper
+  # ─────────────────────────────────────────────────────────────────
+  openai-voice-api:
+    build: ./openai-wrapper
+    container_name: openai-voice-api
+    hostname: openai-voice-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PIPER_HOST=wyoming-piper
+      - PIPER_PORT=10200
+      - WHISPER_HOST=wyoming-whisper
+      - WHISPER_PORT=10300
+      - LOG_LEVEL=info
+    depends_on:
+      - wyoming-piper
+      - wyoming-whisper
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - voice-net
+
+networks:
+  voice-net:
+    driver: bridge
+
+volumes:
+  piper-data:
+  whisper-data:
+  openwakeword-data:
