@@ -77,12 +77,17 @@ echo "*IDN?" | nc -w 2 10.0.1.101 5025
 | R640 | TBD | Planned |
 
 **VMs:**
-| VMID | Name | Purpose |
-|------|------|---------|
-| 100 | whisper-tts | AI/TTS services |
-| 101 | harbor | Docker + MCP services |
-| 102 | VM 102 | General |
-| 210 | ccpm-v2 | CCPM development |
+| VMID | Name | IP | Purpose | Auto-Start | Priority |
+|------|------|-----|---------|------------|----------|
+| 101 | harbor | 10.0.1.202 | Docker + MCP services | Yes | 1 (Core) |
+| 210 | ccpm-v2 | 10.0.1.210 | CCPM development | Yes | 2 |
+| 100 | whisper-tts | 10.0.1.201 | AI/TTS services | Yes | 3 |
+| 102 | VM 102 | - | Unknown/unused | No | - |
+| 103 | ha-test | - | HA test environment | No | - |
+
+**Auto-Start Sequence:** harbor (30s) → ccpm-v2 (20s) → whisper-tts (15s)
+**Total Boot Time:** ~65 seconds from Proxmox host boot
+**Configuration:** See `docs/proxmox-vm-startup-architecture.md`
 
 **GPU Passthrough Ready:**
 - GTX 1080 Ti (IOMMU Group 2)
