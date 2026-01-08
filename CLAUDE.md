@@ -135,19 +135,29 @@ Session reports go to `ccpm_db` (different database):
 | Pi5 DPM | 10.0.1.53 | Raspberry Pi 5 |
 | HomeGate Host | 10.0.1.50 | i3 Mini PC (Ubuntu 24.04) |
 
-### Shared Folder (cc-share)
+### Shared Folder (CC-Share)
 
-**Path:** `~/cc-share` (symlink to GVFS mount)
+When the user refers to **"cc-share"**, **"CC-Share"**, or **"/mnt/CC-Share"**, they mean the shared network storage location on the Synology NAS used for cross-system file sharing.
+
+| Parameter | Value |
+|-----------|-------|
+| **Local Path** | `~/cc-share` (symlink) |
+| **Project Folder** | `~/cc-share/HomeLab` |
+| **NAS Location** | `\\ccpm-nas.local\CC-Share` |
+| **GVFS Mount** | `/run/user/1000/gvfs/smb-share:server=ccpm-nas.local,share=cc-share/` |
 
 ```bash
 # Access shared files
 ls ~/cc-share/
 
+# Copy file to share
+/cc-share <file_path>
+
 # Full GVFS path (if symlink doesn't work)
 /run/user/1000/gvfs/smb-share:server=ccpm-nas.local,share=cc-share/
 ```
 
-**Note:** This is a Synology NAS SMB share mounted via GVFS (Gnome). Do NOT use `/mnt/cc-share`.
+**Note:** This is a Synology NAS SMB share mounted via GVFS (Gnome). Use `~/cc-share`, NOT `/mnt/cc-share`.
 
 ---
 
@@ -159,6 +169,7 @@ ls ~/cc-share/
 | `/homelab-status` | System + equipment status |
 | `/scpi-scan` | Scan SCPI equipment |
 | `/network-scan` | Scan 10.0.1.x subnet |
+| `/cc-share <file>` | Copy file to CC-Share |
 
 ---
 
