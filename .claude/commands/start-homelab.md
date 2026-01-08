@@ -239,12 +239,115 @@ mcp__context7__get-library-docs(context7CompatibleLibraryID: "/docker/docs", top
 
 ---
 
+## CCPM Task Management
+
+### Connection Details
+
+| Parameter | Value |
+|-----------|-------|
+| **Database** | `ccpm_db` @ 10.0.1.251:5433 |
+| **API Base** | `http://10.0.1.210:8000` |
+| **API Docs** | `http://10.0.1.210:8000/docs` |
+| **SSH** | `ssh ccpm@10.0.1.210` (password: 053210) |
+| **V2-Master** | `tmux attach -t v2-master` (on CCPM server) |
+
+### Direct Database Access (Recommended)
+
+**Full reference:** `docs/database-qrc.md`
+
+```bash
+# Quick query - HomeLab tasks
+PGPASSWORD=CcpmDb2025Secure psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db -c "SELECT title, status FROM tasks WHERE project_id = '23c4bc1f-e8c4-4ce6-b3f7-218524c04764';"
+
+# Interactive session
+PGPASSWORD=CcpmDb2025Secure psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db
+
+# List all tables
+PGPASSWORD=CcpmDb2025Secure psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db -c "\dt"
+```
+
+### HomeLab Project
+
+| Field | Value |
+|-------|-------|
+| **Project ID** | `23c4bc1f-e8c4-4ce6-b3f7-218524c04764` |
+| **Slug** | `homelab` |
+
+### Sprint/Task Behavior
+
+| Aspect | Result |
+|--------|--------|
+| Database constraint | sprint_id is optional (nullable) |
+| Current data | All tasks typically have sprints |
+| API support | Tasks can exist without a sprint |
+
+**Note:** Tasks without sprints act as backlog items. The frontend Sprint Board filters by sprint, so sprintless tasks may only appear in "Backlog" or "All Tasks" views.
+
+### Common API Commands
+
+```bash
+# Get HomeLab project
+curl http://10.0.1.210:8000/api/v1/projects/slug/homelab
+
+# List all sprints
+curl http://10.0.1.210:8000/api/v1/sprints
+
+# Create task (with sprint)
+curl -X POST http://10.0.1.210:8000/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "23c4bc1f-e8c4-4ce6-b3f7-218524c04764",
+    "sprint_id": "SPRINT_UUID",
+    "title": "[HL-Component] Task title",
+    "description": "Task description",
+    "status": "todo",
+    "priority": "medium"
+  }'
+
+# Create backlog task (no sprint)
+curl -X POST http://10.0.1.210:8000/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "23c4bc1f-e8c4-4ce6-b3f7-218524c04764",
+    "title": "[HL-Backlog] Task title",
+    "status": "todo",
+    "priority": "low"
+  }'
+
+# Update task status
+curl -X PUT http://10.0.1.210:8000/api/v1/tasks/{TASK_ID} \
+  -H "Content-Type: application/json" \
+  -d '{"status": "in_progress"}'
+```
+
+### Task Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `todo` | Not started |
+| `in_progress` | Being worked on |
+| `blocked` | Cannot proceed |
+| `review` | Ready for review |
+| `complete` | Finished |
+
+### Priority Values
+
+| Priority | Meaning |
+|----------|---------|
+| `critical` | Urgent, do immediately |
+| `high` | Important, do soon |
+| `medium` | Normal priority |
+| `low` | Can wait |
+
+---
+
 ## Quick Reference
 
 ### Key Paths
 - Hardware Inventory: `docs/hardware-inventory.md`
 - Server Architecture: `docs/server-stack-architecture.md`
 - Network Config: `docs/udm-pro-migration-complete.md`
+- Database QRC: `docs/database-qrc.md`
 
 ### SCPI Devices
 | Device | IP | Port |
