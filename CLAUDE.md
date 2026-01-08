@@ -159,6 +159,9 @@ ls ~/cc-share/
 
 **Note:** This is a Synology NAS SMB share mounted via GVFS (Gnome). Use `~/cc-share`, NOT `/mnt/cc-share`.
 
+**Auto-Mount:** Configured via systemd user service to mount automatically on login.
+**Configuration:** See `docs/cc-share-persistent-mount.md` for details.
+
 ---
 
 ## Slash Commands
