@@ -2,7 +2,32 @@
 
 **Date:** 2026-01-08
 **Issue:** Home Assistant cannot access Samsung TV on 10.0.30.141
-**Status:** Firewall rules exist, TV is online, ports are open
+**Status:** ✓ RESOLVED - Moved TV to Main WiFi
+
+---
+
+## ✓ RESOLUTION (2026-01-08)
+
+**Root Cause:** VLAN isolation issue between Home Assistant (10.0.1.150) and Samsung TV (10.0.30.141 on IoT VLAN). Despite firewall rules "Allow HA to IoT" and "Allow IoT to HA" existing, cross-VLAN communication was still blocked.
+
+**Solution:** Moved Samsung TV from IoT VLAN (10.0.30.0/24) to Main WiFi (10.0.1.0/24)
+- **Old IP:** 10.0.30.141 (IoT VLAN 30)
+- **New IP:** 10.0.1.141 (Main network)
+- **Result:** Home Assistant integration now working ✓
+
+**Lesson Learned:** Even with explicit firewall rules, VLAN isolation can be more complex than expected. Additional factors may include:
+- AP client isolation settings
+- Hidden or default deny rules
+- Rule ordering issues
+- Unifi Security Gateway advanced isolation features
+
+**Recommendation:** For smart home devices that need integration with Home Assistant, keep them on the same network unless strict IoT isolation is required for security.
+
+---
+
+## Original Troubleshooting (Reference)
+
+**Note:** The following troubleshooting steps were created when the TV was on IoT VLAN. They remain here for reference if you need to troubleshoot cross-VLAN issues in the future.
 
 ---
 
