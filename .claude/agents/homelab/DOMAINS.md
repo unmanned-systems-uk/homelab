@@ -1,6 +1,6 @@
 # HomeLab Domains
 
-The HomeLab agent manages 8 infrastructure domains.
+The HomeLab agent manages 9 infrastructure domains.
 
 ---
 
@@ -227,6 +227,67 @@ Allow 10.0.1.50 → 10.0.50.0/24  # Lab VLAN (SCPI equipment)
 - Deploy to i3 host @ 10.0.1.50
 - Integrate with existing UniFi MCP
 - Set up Cloudflare Tunnel
+
+---
+
+## 9. CCPM V2 Integration
+
+**Primary:** Cross-project coordination and task management
+
+| Item | Details |
+|------|---------|
+| Agent UUID | `aaaaaaaa-bbbb-cccc-dddd-222222222222` |
+| Agent Name | HomeLab-Agent |
+| API Base | `http://10.0.1.210:8000/api/v1` |
+| Database | `homelab_db` @ 10.0.1.251:5433 |
+| CCPM Database | `ccpm_db` @ 10.0.1.251:5433 (for session reports) |
+
+**Messaging System:**
+```bash
+# Check inbox
+curl -s "http://10.0.1.210:8000/api/v1/agent-messages/inbox?agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222"
+
+# Send message to human (Anthony)
+curl -X POST "http://10.0.1.210:8000/api/v1/agent-messages?from_agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_user_id": "7563bfda-6e47-4e50-b37a-90ccdc47311a",
+    "message_type": "query",
+    "subject": "Subject",
+    "body": "Message",
+    "priority": "normal"
+  }'
+```
+
+**Shared Documentation:**
+- API Reference: `/mnt/CC-Share/Common/agents/API_REFERENCE.md`
+- Workflow Guide: `/mnt/CC-Share/Common/agents/WORKFLOW_GUIDE.md`
+- Task/Sprint Guide: `/mnt/CC-Share/Common/agents/TASK_SPRINT_GUIDE.md`
+
+**Commands:**
+- `/check-messages` - Check for pending agent messages
+
+**Key UUIDs:**
+| Entity | UUID |
+|--------|------|
+| Anthony (Human) | `7563bfda-6e47-4e50-b37a-90ccdc47311a` |
+| V2-Master | `4c714f40-d15c-4f0e-bb34-410f2e7e1806` |
+| BROADCAST (All Agents) | `ffffffff-ffff-ffff-ffff-ffffffffffff` |
+
+**Database Access:**
+```bash
+# HomeLab infrastructure data
+PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d homelab_db
+
+# CCPM task/sprint data
+PGPASSWORD="CcpmDb2025Secure" psql -h 10.0.1.251 -p 5433 -U ccpm -d ccpm_db
+```
+
+**Tasks:**
+- Check messages on session start
+- Send status updates to V2-Master
+- Create/update tasks via CCPM API
+- Send alerts to human via messaging system
 
 ---
 
