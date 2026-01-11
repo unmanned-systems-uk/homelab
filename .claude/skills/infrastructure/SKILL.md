@@ -141,3 +141,128 @@ unifi_get_networks
 | US 24 PoE Studio | 10.0.10.12 | Switch |
 | US 24 PoE Cinema | 10.0.10.13 | Switch |
 | AC Pro APs | 10.0.10.20-26 | Access Points |
+
+---
+
+## Troubleshooting
+
+### UniFi Port Configuration for Network Stability (LEARNED: 2026-01-10)
+
+**Context:** HA Pi causing recurring network failures (Issue #36). HA Pi restarts triggered STP topology changes causing US 48 uplink port to enter blocking state. Medical-critical system (Nathan diabetes monitoring).
+
+**Problem Pattern:**
+- Device restart → MAC address flush → STP recalculation
+- Uplink port enters blocking state
+- Requires physical cable replug to restore
+- **Only occurred during HA Pi backend work (service restarts)**
+
+**Solution - UniFi Port Settings:**
+
+**For Uplink Ports (switch-to-switch):**
+```
+Advanced → Manual
+Link Speed: 1Gbps FDX (forced - disable auto-negotiate)
+
+Storm Control: ☑ Enable
+  ☑ Broadcast:  100 kpps (UI enforced minimum)
+  ☑ Multicast:  100 kpps (tight) or 200 kpps (permissive)
+  ☑ Unicast:    1000 kpps (67% of 1G link capacity)
+
+Loop Protection: ☑ Enable
+Spanning Tree Protocol: ☑ Enable
+```
+
+**For Edge Device Ports (server/device connections):**
+```
+Storm Control: ☑ Enable
+  ☑ Broadcast:  100 kpps
+  ☑ Multicast:  100 kpps (or 200 kpps for discovery-heavy devices)
+  ☑ Unicast:    1000 kpps
+
+Port Isolation: ☐ Disable (unless isolating device)
+```
+
+**UniFi UI Notes:**
+- Storm Control thresholds are in **pKts/s** (kilo packets per second)
+- 100 kpps = 100,000 packets/second
+- **Loop Protection = STP Edge Port / PortFast** (UniFi terminology)
+- Link Speed shows as "1Gbps FDX" when forced (not "Auto")
+
+**Why This Works:**
+- **Forced Link Speed:** Eliminates auto-negotiation timeout issues
+- **Storm Control:** Limits broadcast/multicast/unicast floods that trigger port protection
+- **Loop Protection:** Port bypasses STP recalculation (immediate forwarding state)
+- **STP Still Enabled:** Network-wide loop prevention remains active
+
+**Threshold Calculations (for 1Gbps link):**
+```
+Max theoretical: ~1,488,000 pps (64-byte packets)
+
+Broadcast:  100 kpps = 6.7% of max
+Multicast:  100 kpps = 6.7% of max (or 200 = 13.4%)
+Unicast:    1000 kpps = 67% of max
+
+Conservative for medical-critical systems
+```
+
+**When to Use:**
+- Medical or life-safety critical infrastructure
+- Devices with aggressive service discovery (mDNS, Avahi, SSDP)
+- After experiencing network drops correlated with device restarts
+- Uplink ports in daisy-chained switch topology
+- Any port where STP blocking causes outages
+
+**When NOT to Use:**
+- Ports that actually need STP protection (redundant uplinks creating loops)
+- Ports where you want loop detection (test/lab environments)
+
+**Verification:**
+```bash
+# Test device restart doesn't drop network
+ping -c 100 [device-ip]
+ssh [device] "sudo reboot"
+# Monitor ping - should show 0% loss
+
+# Check UniFi Events
+UniFi Controller → Events → Filter: "Port" and "STP"
+# Should NOT see topology change events
+```
+
+**Related:**
+- Issue #36: HA Pi Network Failure
+- docs/ha-pi-network-fix-unifi-config.md
+- docs/session-summary-2026-01-10.md
+- Network: US 48 Port 14 → US 24 Port 2 → HA Pi (10.0.1.150)
+
+**Permanent Fix:** Upgrade copper uplink to fiber SFP+ (eliminates electrical/ground loop issues)
+
+---
+
+### Fiber vs Copper Uplinks for Critical Systems
+
+**When to Use Fiber:**
+- Medical/life-safety critical infrastructure
+- Experiencing electrical interference issues
+- Long runs (>100m eventually)
+- 10Gbps future-proofing desired
+- Ground loop isolation needed
+
+**Components (1Gbps or 10Gbps):**
+```
+2x SFP/SFP+ modules:
+  - 1G: 1000Base-SX (850nm, LC, MMF)
+  - 10G: 10GBase-SR (850nm, LC, MMF)
+
+1x Fiber cable:
+  - LC-LC duplex
+  - OM3 (300m @ 10G) or OM4 (400m @ 10G)
+  - Aqua jacket = multimode
+```
+
+**Cost:** ~£50-85 for complete 10G upgrade
+
+**Benefits over Copper:**
+- Galvanic isolation (no electrical connection)
+- Immune to EMI/RFI interference
+- No auto-negotiation issues (fixed speed)
+- Higher reliability for critical systems

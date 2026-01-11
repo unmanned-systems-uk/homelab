@@ -223,7 +223,70 @@ done
 
 ---
 
-## STEP 7: Commit Session Summary
+## STEP 7: Skill Knowledge Review
+
+**CRITICAL:** Review session for learnings and update skills.
+
+### Identify What Was Learned:
+
+Ask yourself:
+- What problems did we solve?
+- What configurations/settings did we discover?
+- What tool behaviors did we learn?
+- What patterns emerged?
+
+### Common Learning Categories:
+
+**Infrastructure (UniFi, Proxmox, Docker):**
+- Network configuration patterns
+- Switch/router settings that solved issues
+- VM/container best practices discovered
+
+**SCPI Equipment:**
+- Instrument command sequences that work
+- Timing/timeout patterns
+- Measurement techniques
+
+**Database:**
+- Query patterns for specific use cases
+- Schema design decisions
+- Migration techniques
+
+### Add to Skills:
+
+If significant learning occurred:
+
+```bash
+# Example: Today we learned UniFi storm control configuration
+# Already added to .claude/skills/infrastructure/SKILL.md
+
+# If NOT yet added, do it now:
+# Edit appropriate .claude/skills/[skill-name]/SKILL.md
+# Add new section with (LEARNED: YYYY-MM-DD)
+# Include context, specific values, why it works, when to use
+```
+
+### Skill Update Commit Pattern:
+
+```bash
+git add .claude/skills/[skill-name]/SKILL.md
+git commit -m "skill: Add [topic] to [skill-name]
+
+Learned during [session context/issue].
+
+Added:
+- [Specific item 1]
+- [Specific item 2]
+
+Reference: docs/session-summary-YYYY-MM-DD.md
+"
+```
+
+**Note:** If skills were updated during session (proactive), verify they're committed. If not, add now.
+
+---
+
+## STEP 8: Commit Session Summary
 
 ```bash
 SESSION_DATE=$(date +%Y-%m-%d)
