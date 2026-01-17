@@ -266,3 +266,54 @@ UniFi Controller → Events → Filter: "Port" and "STP"
 - Immune to EMI/RFI interference
 - No auto-negotiation issues (fixed speed)
 - Higher reliability for critical systems
+
+---
+
+### Chrome Insecure Origin Bypass for Local Testing (LEARNED: 2026-01-17)
+
+**Context:** Testing HomeGate voice input requires microphone access, which browsers restrict to secure contexts (HTTPS). When testing on local HTTP (http://10.0.1.50), Chrome blocks the microphone API.
+
+**Solution - Chrome Flag Override:**
+
+1. Navigate to: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
+2. Enable **"Insecure origins treated as secure"**
+3. Add origins to whitelist (include port if non-standard):
+   ```
+   http://10.0.1.50
+   http://10.0.1.50:80
+   http://10.0.1.50:4000
+   ```
+4. Click **"Relaunch"** to restart Chrome
+
+**Why This Works:**
+- Chrome treats listed origins as if they were HTTPS
+- Enables secure-context APIs (microphone, camera, geolocation, etc.)
+- Only affects the specific origins listed
+- Persists across browser restarts
+
+**When to Use:**
+- Testing PWA features on local network
+- Voice/audio input testing (WebRTC, getUserMedia)
+- Camera/video capture testing
+- Geolocation testing on local apps
+- Any secure-context API on HTTP during development
+
+**When NOT to Use:**
+- Production environments (use proper HTTPS)
+- Public-facing applications
+- Shared/public computers
+
+**Security Note:**
+- This bypasses browser security for listed origins only
+- Remove entries when testing is complete
+- Never add external/public URLs
+
+**Alternative:** Use Cloudflare tunnel for proper HTTPS:
+```bash
+# If cloudflared is configured
+# Access via: https://homegate.yourdomain.com
+```
+
+**Related:**
+- HomeGate voice integration (VoiceInput component)
+- Browser secure context requirements: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts

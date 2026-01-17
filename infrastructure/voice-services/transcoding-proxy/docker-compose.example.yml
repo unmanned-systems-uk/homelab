@@ -1,0 +1,33 @@
+version: '3.8'
+
+# Example Docker Compose integration
+# Add this service to your main docker-compose.yml in the parent directory
+
+services:
+  transcoding-proxy:
+    build: ./transcoding-proxy
+    container_name: transcoding-proxy
+    ports:
+      - "8001:8001"
+    networks:
+      - voice-network
+    restart: unless-stopped
+    depends_on:
+      - whisper
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  voice-network:
+    external: true

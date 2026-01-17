@@ -11,6 +11,7 @@
 #   - 10300: Wyoming Whisper (STT)
 #   - 10400: Wyoming OpenWakeWord (Wake Word Detection)
 #   - 8000:  OpenAI-compatible API wrapper
+#   - 8001:  Audio Transcoding Proxy
 #
 # ═══════════════════════════════════════════════════════════════════
 
@@ -55,6 +56,23 @@ services:
     restart: unless-stopped
     networks:
       - voice-net
+
+  # ─────────────────────────────────────────────────────────────────
+  # Audio Transcoding Proxy - Format Conversion for Whisper
+  # ─────────────────────────────────────────────────────────────────
+  audio-transcoding-proxy:
+    build: ./transcoding-proxy
+    container_name: audio-transcoding-proxy
+    hostname: audio-transcoding-proxy
+    ports:
+      - "8001:8001"
+    environment:
+      - WHISPER_URL=http://wyoming-whisper:8000
+    networks:
+      - voice-net
+    restart: unless-stopped
+    depends_on:
+      - wyoming-whisper
 
   # ─────────────────────────────────────────────────────────────────
   # Wyoming OpenWakeWord - Wake Word Detection
