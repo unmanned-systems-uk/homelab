@@ -310,4 +310,56 @@ gh issue list --repo unmanned-systems-uk/homeassistant
 
 ---
 
+## CCPM V2 Integration
+
+This agent is connected to the CCPM V2 project management system.
+
+### Shared Documentation
+- **API Reference:** `~/cc-share/Common/agents/API_REFERENCE.md`
+- **Workflow Guide:** `~/cc-share/Common/agents/WORKFLOW_GUIDE.md`
+- **Task/Sprint Guide:** `~/cc-share/Common/agents/TASK_SPRINT_GUIDE.md`
+
+### HomeLab Agent ID
+```
+aaaaaaaa-bbbb-cccc-dddd-222222222222
+```
+
+### API Base URL
+```
+http://10.0.1.210:8000/api/v1
+```
+
+### Key Commands
+- `/check-messages` - Check for pending messages from other agents
+- Create tasks via API (see Task/Sprint Guide in cc-share)
+- Send messages via API (see API Reference in cc-share)
+
+### Message the Director (Human)
+```bash
+curl -X POST "http://10.0.1.210:8000/api/v1/agent-messages?from_agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_user_id": "7563bfda-6e47-4e50-b37a-90ccdc47311a",
+    "message_type": "query",
+    "subject": "Subject here",
+    "body": "Message body",
+    "priority": "normal"
+  }'
+```
+
+### Broadcast to ALL Agents
+```bash
+curl -X POST "http://10.0.1.210:8000/api/v1/agent-messages?from_agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_user_id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    "message_type": "info",
+    "subject": "Subject",
+    "body": "Message",
+    "priority": "normal"
+  }'
+```
+
+---
+
 *HomeLab Agent - Standalone infrastructure management*
