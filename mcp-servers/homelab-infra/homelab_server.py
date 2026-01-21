@@ -558,11 +558,679 @@ def homelab_infrastructure_summary() -> dict:
             }
 
 
+# ==================== CCPM Integration ====================
+
+# CCPM API endpoints
+CCPM_TASK_API = os.environ.get("CCPM_TASK_API", "http://10.0.1.210:8080/api")
+CCPM_MESSAGING_API = os.environ.get("CCPM_MESSAGING_API", "http://10.0.1.210:8000/api/v1")
+
+# Agent cache (5 minute TTL)
+_agent_cache = {"data": None, "timestamp": None}
+AGENT_CACHE_TTL = 300  # 5 minutes
+
+def get_cached_agents(force_refresh: bool = False) -> dict:
+    """Get cached agent list or fetch fresh if expired."""
+    import time
+
+    now = time.time()
+    if (not force_refresh and
+        _agent_cache["data"] is not None and
+        _agent_cache["timestamp"] is not None and
+        now - _agent_cache["timestamp"] < AGENT_CACHE_TTL):
+        return _agent_cache["data"]
+
+    # Fetch fresh data
+    try:
+        response = httpx.get(f"{CCPM_MESSAGING_API}/agents", timeout=10.0)
+        response.raise_for_status()
+        agents = response.json()
+
+        # Update cache
+        _agent_cache["data"] = {agent["name"]: agent for agent in agents}
+        _agent_cache["timestamp"] = now
+        return _agent_cache["data"]
+    except Exception as e:
+        logger.error(f"Failed to fetch agents: {e}")
+        # Return stale cache if available
+        if _agent_cache["data"]:
+            logger.warning("Using stale agent cache due to fetch failure")
+            return _agent_cache["data"]
+        raise
+
+def resolve_agent_id(agent_identifier: str) -> str:
+    """
+    Resolve agent name to UUID, or return UUID if already in UUID format.
+
+    Args:
+        agent_identifier: Agent name (e.g., "HomeLab-Agent") or UUID
+
+    Returns:
+        Agent UUID
+
+    Raises:
+        ValueError: If agent not found
+    """
+    # Check if already a UUID (contains hyphens and hex chars)
+    if len(agent_identifier) == 36 and agent_identifier.count('-') == 4:
+        return agent_identifier
+
+    # Resolve name to UUID
+    agents = get_cached_agents()
+    if agent_identifier in agents:
+        return agents[agent_identifier]["id"]
+
+    # Try case-insensitive match
+    for name, agent in agents.items():
+        if name.lower() == agent_identifier.lower():
+            return agent["id"]
+
+    raise ValueError(f"Agent not found: {agent_identifier}")
+
+
+# ==================== Agent Messaging Tools ====================
+
+@mcp.tool()
+def ccpm_list_agents(status: str = None, agent_type: str = None) -> list[dict]:
+    """
+    List all registered agents in the CCPM system.
+
+    Args:
+        status: Optional filter by status ("active", "idle")
+        agent_type: Optional filter by type ("orchestrator", "backend", etc.)
+
+    Returns:
+        List of agents with their details
+    """
+    try:
+        params = {}
+        if status:
+            params["status"] = status
+        if agent_type:
+            params["agent_type"] = agent_type
+
+        response = httpx.get(f"{CCPM_MESSAGING_API}/agents", params=params, timeout=10.0)
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_send_message(
+    to_agent: str,
+    subject: str,
+    body: str,
+    message_type: str = "info",
+    priority: str = "normal",
+    from_agent_id: str = None
+) -> dict:
+    """
+    Send a message to another agent. Can use agent name (resolved to UUID) or direct UUID.
+
+    Args:
+        to_agent: Agent name (e.g., "HomeLab-Agent") or UUID
+        subject: Message subject
+        body: Message body
+        message_type: Type of message (info, task_assignment, query, alert, etc.)
+        priority: Message priority (low, normal, high)
+        from_agent_id: Sender agent UUID (defaults to env CCPM_AGENT_ID)
+
+    Returns:
+        Success response with message ID or error
+    """
+    valid_types = [
+        "task_assignment", "task_request", "feature_request", "bug_report",
+        "status_request", "completion_signal", "alert", "info", "query", "response"
+    ]
+
+    if message_type not in valid_types:
+        return {
+            "success": False,
+            "error": f"Invalid message_type. Must be one of: {', '.join(valid_types)}",
+            "error_code": "INVALID_MESSAGE_TYPE"
+        }
+
+    try:
+        # Resolve recipient
+        to_agent_id = resolve_agent_id(to_agent)
+
+        # Get sender ID
+        sender_id = from_agent_id or os.environ.get("CCPM_AGENT_ID")
+        if not sender_id:
+            return {
+                "success": False,
+                "error": "No sender agent ID provided and CCPM_AGENT_ID not set",
+                "error_code": "MISSING_SENDER_ID"
+            }
+
+        # Send message
+        payload = {
+            "to_agent_id": to_agent_id,
+            "subject": subject,
+            "body": body,
+            "message_type": message_type,
+            "priority": priority
+        }
+
+        response = httpx.post(
+            f"{CCPM_MESSAGING_API}/agent-messages",
+            params={"from_agent_id": sender_id},
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "AGENT_NOT_FOUND"
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code} - {e.response.text}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_check_inbox(agent_id: str = None, include_read: bool = False) -> list[dict]:
+    """
+    Check inbox for pending messages.
+
+    Args:
+        agent_id: Agent UUID (defaults to env CCPM_AGENT_ID)
+        include_read: Whether to include read messages
+
+    Returns:
+        List of messages
+    """
+    try:
+        # Get agent ID
+        target_agent_id = agent_id or os.environ.get("CCPM_AGENT_ID")
+        if not target_agent_id:
+            return {
+                "success": False,
+                "error": "No agent ID provided and CCPM_AGENT_ID not set",
+                "error_code": "MISSING_AGENT_ID"
+            }
+
+        params = {"agent_id": target_agent_id}
+        if not include_read:
+            params["status"] = "pending"
+
+        response = httpx.get(
+            f"{CCPM_MESSAGING_API}/agent-messages/inbox",
+            params=params,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        # Handle paginated response
+        if isinstance(data, dict) and "items" in data:
+            return data["items"]
+        return data
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_mark_message_complete(message_id: str, response: str = None) -> dict:
+    """
+    Mark a message as complete, optionally with a response.
+
+    Args:
+        message_id: Message UUID
+        response: Optional response text
+
+    Returns:
+        Success response or error
+    """
+    try:
+        payload = {}
+        if response:
+            payload["response"] = response
+
+        response_obj = httpx.post(
+            f"{CCPM_MESSAGING_API}/agent-messages/{message_id}/complete",
+            json=payload,
+            timeout=10.0
+        )
+        response_obj.raise_for_status()
+        return response_obj.json()
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+# ==================== Task Management Tools ====================
+
+@mcp.tool()
+def ccpm_get_task(task_id: int) -> dict:
+    """
+    Get details of a specific task by ID.
+
+    Args:
+        task_id: Task ID
+
+    Returns:
+        Task details
+    """
+    try:
+        response = httpx.get(f"{CCPM_TASK_API}/tasks/{task_id}", timeout=10.0)
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_list_tasks(
+    sprint_id: int = None,
+    status: str = None,
+    assignee: str = None
+) -> list[dict]:
+    """
+    List tasks with optional filters.
+
+    Args:
+        sprint_id: Filter by sprint ID
+        status: Filter by status (pending, in-progress, review, blocked, testing, done)
+        assignee: Filter by assignee name
+
+    Returns:
+        List of tasks
+    """
+    try:
+        params = {}
+        if sprint_id is not None:
+            params["sprint_id"] = sprint_id
+        if status:
+            params["status"] = status
+        if assignee:
+            params["assigned_to"] = assignee
+
+        response = httpx.get(f"{CCPM_TASK_API}/tasks", params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+
+        # Handle response format
+        if isinstance(data, dict) and "tasks" in data:
+            return data["tasks"]
+        return data
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_update_task_status(
+    task_id: int,
+    status: str,
+    blocked_reason: str = None
+) -> dict:
+    """
+    Update task status. Agents can set: in-progress, review, blocked, testing.
+
+    Args:
+        task_id: Task ID
+        status: New status (in-progress, review, blocked, testing)
+        blocked_reason: Required if status is "blocked"
+
+    Returns:
+        Updated task or error
+    """
+    agent_allowed_statuses = ["in-progress", "review", "blocked", "testing"]
+
+    if status not in agent_allowed_statuses:
+        return {
+            "success": False,
+            "error": f"Agents can only set status to: {', '.join(agent_allowed_statuses)}",
+            "error_code": "INVALID_STATUS"
+        }
+
+    if status == "blocked" and not blocked_reason:
+        return {
+            "success": False,
+            "error": "blocked_reason is required when status is 'blocked'",
+            "error_code": "MISSING_BLOCKED_REASON"
+        }
+
+    try:
+        payload = {"status": status}
+        if blocked_reason:
+            payload["blocked_reason"] = blocked_reason
+
+        response = httpx.put(
+            f"{CCPM_TASK_API}/agent/tasks/{task_id}/status",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_submit_completion_report(
+    task_id: int,
+    report: str,
+    submitted_by: str
+) -> dict:
+    """
+    Submit a completion report for a task. Triggers GitHub posting and signal script.
+
+    Args:
+        task_id: Task ID
+        report: Completion report text
+        submitted_by: Agent name submitting the report
+
+    Returns:
+        Success response or error
+    """
+    try:
+        payload = {
+            "report": report,
+            "submitted_by": submitted_by
+        }
+
+        response = httpx.post(
+            f"{CCPM_TASK_API}/tasks/{task_id}/report",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+# ==================== Sprint Management Tools ====================
+
+@mcp.tool()
+def ccpm_get_active_sprint() -> dict:
+    """
+    Get the currently active sprint with task counts.
+
+    Returns:
+        Active sprint details or error
+    """
+    try:
+        response = httpx.get(
+            f"{CCPM_TASK_API}/sprints",
+            params={"status": "active"},
+            timeout=10.0
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        # Return first active sprint
+        if isinstance(data, list) and len(data) > 0:
+            return data[0]
+        elif isinstance(data, dict) and "sprints" in data and len(data["sprints"]) > 0:
+            return data["sprints"][0]
+
+        return {
+            "success": False,
+            "error": "No active sprint found",
+            "error_code": "NO_ACTIVE_SPRINT"
+        }
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_list_sprints(status: str = None) -> list[dict]:
+    """
+    List sprints with optional status filter.
+
+    Args:
+        status: Filter by status (planning, active, completed)
+
+    Returns:
+        List of sprints
+    """
+    try:
+        params = {}
+        if status:
+            params["status"] = status
+
+        response = httpx.get(f"{CCPM_TASK_API}/sprints", params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+
+        # Handle response format
+        if isinstance(data, dict) and "sprints" in data:
+            return data["sprints"]
+        return data
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+# ==================== Session Logging Tools ====================
+
+@mcp.tool()
+def ccpm_create_session(
+    agent_name: str,
+    session_type: str = "work",
+    description: str = None
+) -> dict:
+    """
+    Create a new session log entry.
+
+    Args:
+        agent_name: Name of the agent creating the session
+        session_type: Type of session (work, planning, review)
+        description: Optional session description
+
+    Returns:
+        Created session with session_id
+    """
+    valid_types = ["work", "planning", "review"]
+
+    if session_type not in valid_types:
+        return {
+            "success": False,
+            "error": f"Invalid session_type. Must be one of: {', '.join(valid_types)}",
+            "error_code": "INVALID_SESSION_TYPE"
+        }
+
+    try:
+        payload = {
+            "agent_name": agent_name,
+            "session_type": session_type
+        }
+        if description:
+            payload["description"] = description
+
+        response = httpx.post(
+            f"{CCPM_TASK_API}/sessions",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_log_session_entry(
+    session_id: int,
+    entry_type: str,
+    content: str
+) -> dict:
+    """
+    Add a log entry to an existing session.
+
+    Args:
+        session_id: Session ID
+        entry_type: Type of entry (start, progress, decision, issue, complete)
+        content: Entry content text
+
+    Returns:
+        Created entry or error
+    """
+    valid_types = ["start", "progress", "decision", "issue", "complete"]
+
+    if entry_type not in valid_types:
+        return {
+            "success": False,
+            "error": f"Invalid entry_type. Must be one of: {', '.join(valid_types)}",
+            "error_code": "INVALID_ENTRY_TYPE"
+        }
+
+    try:
+        payload = {
+            "entry_type": entry_type,
+            "content": content
+        }
+
+        response = httpx.post(
+            f"{CCPM_TASK_API}/sessions/{session_id}/entries",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
 # ==================== Run Server ====================
 
 if __name__ == "__main__":
     port = int(os.environ.get("MCP_PORT", 8080))
     logger.info(f"Starting HomeLab MCP Server")
     logger.info(f"Database: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
+    logger.info(f"CCPM Task API: {CCPM_TASK_API}")
+    logger.info(f"CCPM Messaging API: {CCPM_MESSAGING_API}")
     logger.info(f"Listening on port {port}")
     mcp.run(transport="sse", port=port, host="0.0.0.0")

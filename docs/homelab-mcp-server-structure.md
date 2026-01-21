@@ -1,6 +1,7 @@
 # HomeLab MCP Server - Current Structure
 
 **Created:** 2025-12-15
+**Updated:** 2026-01-21 (CCPM Integration)
 **Status:** Production (running on Harbor VM)
 **Purpose:** Documentation of existing MCP server for evaluation and extension
 
@@ -55,18 +56,55 @@
 
 ## Current MCP Tools
 
-### 8 Tools Implemented
+### 23 Tools Implemented
+
+#### HomeLab Infrastructure Tools (11 tools)
 
 | Tool | Purpose | Security |
 |------|---------|----------|
-| `homelab_list_vms(status)` | List all VMs, optional filter | Read-only |
-| `homelab_get_vm(vm_id, name)` | Get VM details | Read-only |
-| `homelab_get_credentials(target)` | Get credentials for vm/host/service | **AUDIT LOGGED** |
-| `homelab_list_services(vm_id)` | List services, optional VM filter | Read-only |
+| `homelab_list_devices(category, status, type)` | List all devices in infrastructure | Read-only |
+| `homelab_get_device(name, ip)` | Get detailed device information | Read-only |
+| `homelab_list_scpi_equipment(type)` | List SCPI test equipment | Read-only |
+| `homelab_get_scpi_connection(device)` | Get SCPI connection details | Read-only |
+| `homelab_list_services(device, type)` | List services | Read-only |
 | `homelab_check_service_health(name)` | HTTP health check | Network call |
-| `homelab_list_hosts()` | List Proxmox hosts | Read-only |
-| `homelab_get_host(host_id, name)` | Get host details | Read-only |
+| `homelab_list_networks()` | List VLANs and networks | Read-only |
+| `homelab_list_firewall_rules()` | List firewall rules | Read-only |
 | `homelab_lookup_ip(ip)` | Lookup IP allocation | Read-only |
+| `homelab_get_credentials(target)` | Get credentials for device/service | **AUDIT LOGGED** |
+| `homelab_infrastructure_summary()` | Get infrastructure summary | Read-only |
+
+#### CCPM Agent Messaging Tools (4 tools)
+
+| Tool | Purpose | Security |
+|------|---------|----------|
+| `ccpm_list_agents(status, type)` | List all registered CCPM agents | Read-only |
+| `ccpm_send_message(to, subject, body, ...)` | Send message to agent (with name resolution) | Agent auth |
+| `ccpm_check_inbox(agent_id, include_read)` | Check agent inbox for messages | Agent auth |
+| `ccpm_mark_message_complete(msg_id, response)` | Mark message as complete | Agent auth |
+
+#### CCPM Task Management Tools (5 tools)
+
+| Tool | Purpose | Security |
+|------|---------|----------|
+| `ccpm_get_task(task_id)` | Get task details | Read-only |
+| `ccpm_list_tasks(sprint_id, status, assignee)` | List tasks with filters | Read-only |
+| `ccpm_update_task_status(id, status, reason)` | Update task status (agent role) | Agent auth |
+| `ccpm_submit_completion_report(id, report, by)` | Submit task completion report | Agent auth |
+
+#### CCPM Sprint Management Tools (2 tools)
+
+| Tool | Purpose | Security |
+|------|---------|----------|
+| `ccpm_get_active_sprint()` | Get current active sprint | Read-only |
+| `ccpm_list_sprints(status)` | List sprints with filter | Read-only |
+
+#### CCPM Session Logging Tools (2 tools)
+
+| Tool | Purpose | Security |
+|------|---------|----------|
+| `ccpm_create_session(agent, type, desc)` | Create session log | Agent auth |
+| `ccpm_log_session_entry(id, type, content)` | Add entry to session log | Agent auth |
 
 ---
 
@@ -77,9 +115,12 @@
 **Framework:** FastMCP 2.0+
 **Language:** Python 3.11
 **Transport:** SSE (Server-Sent Events over HTTP)
-**Database:** SQLite (homelab.db)
+**Database:** PostgreSQL (homelab_db @ 10.0.1.251:5433)
 **Encryption:** Fernet (AES-128 via cryptography library)
-**HTTP Client:** httpx (for health checks)
+**HTTP Client:** httpx (for health checks and CCPM API calls)
+**External APIs:**
+- CCPM Task API: http://10.0.1.210:8080/api
+- CCPM Messaging API: http://10.0.1.210:8000/api/v1
 
 ### Data Flow
 
@@ -92,7 +133,9 @@ SSE Transport (http://10.0.1.202:8080/sse)
     ↓
 homelab_server.py (FastMCP)
     ↓
-SQLite Database (homelab.db) + Encryption Module
+├── PostgreSQL Database (homelab_db) + Encryption Module
+├── CCPM Task API (10.0.1.210:8080/api)
+└── CCPM Messaging API (10.0.1.210:8000/api/v1)
     ↓
 Returns: JSON data to agent
 ```
@@ -138,7 +181,8 @@ Returns: JSON data to agent
 ```
 fastmcp>=2.0.0          # MCP server framework
 cryptography>=41.0.0    # Fernet encryption for credentials
-httpx>=0.25.0          # Async HTTP client for health checks
+httpx>=0.25.0          # Async HTTP client for health checks and CCPM API
+psycopg2-binary>=2.9.0  # PostgreSQL database driver
 ```
 
 ### System Dependencies
@@ -514,6 +558,90 @@ HomeLab MCP Server (Extended)
 
 ---
 
-**Status:** Ready for evaluation and extension planning
-**Next:** Decide on modular structure vs single-file approach
+**Status:** Production with CCPM integration (2026-01-21)
+**Next:** Deploy updated container to Harbor VM
+
+---
+
+## CCPM Integration (2026-01-21)
+
+### Overview
+
+Extended the HomeLab MCP Server with 12 CCPM (Claude Code Project Manager) tools to enable native MCP interaction with project management and agent messaging systems.
+
+### Why MCP Over REST API
+
+Based on agent feedback across multiple projects:
+1. **Discoverability** - Tools appear in Claude's tool list automatically
+2. **Type Safety** - Schema validation prevents malformed requests
+3. **No URL Memorization** - Agents use named tools instead of crafting curl commands
+4. **Agent Name Resolution** - Send messages to "HomeLab-Agent" instead of UUID lookup
+5. **Validation** - Parameters validated before API calls
+
+### Implementation Details
+
+**Agent Caching:**
+- Agent list cached for 5 minutes (reduces API calls)
+- Automatic refresh on cache expiration
+- Fallback to stale cache if API unavailable
+
+**Name Resolution:**
+- `ccpm_send_message()` accepts agent names or UUIDs
+- Automatic resolution using cached agent registry
+- Case-insensitive name matching
+
+**Error Handling:**
+- Structured error responses with error codes
+- HTTP status code propagation
+- Clear, actionable error messages
+
+### Environment Variables
+
+```bash
+# CCPM API endpoints
+CCPM_TASK_API=http://10.0.1.210:8080/api
+CCPM_MESSAGING_API=http://10.0.1.210:8000/api/v1
+
+# Agent identity (for sending messages)
+CCPM_AGENT_ID=<agent-uuid>
+```
+
+### Tool Categories
+
+1. **Agent Messaging (4 tools)** - Inter-agent communication
+2. **Task Management (5 tools)** - CCPM task operations
+3. **Sprint Management (2 tools)** - Sprint queries
+4. **Session Logging (2 tools)** - Session tracking
+
+### Deployment Notes
+
+When deploying updated container:
+1. Build new image: `docker build -t homelab-infra:latest .`
+2. Save and transfer: `docker save homelab-infra:latest | ssh ccpm@10.0.1.202 docker load`
+3. Stop old container: `docker stop homelab-mcp && docker rm homelab-mcp`
+4. Start new container with CCPM env vars:
+   ```bash
+   docker run -d \
+     --name homelab-mcp \
+     --network openwebui-net \
+     -p 8080:8000 \
+     -e CCPM_TASK_API=http://10.0.1.210:8080/api \
+     -e CCPM_MESSAGING_API=http://10.0.1.210:8000/api/v1 \
+     -e CCPM_AGENT_ID=<agent-uuid> \
+     -e HOMELAB_DB_HOST=10.0.1.251 \
+     -e HOMELAB_DB_PORT=5433 \
+     -e HOMELAB_DB_PASSWORD=<password> \
+     homelab-infra:latest
+   ```
+
+### Testing Checklist
+
+- [x] All 12 CCPM tools implemented
+- [x] Agent name → UUID resolution working
+- [x] Error handling returns structured responses
+- [x] Python syntax validation passed
+- [ ] Container rebuilt and tested
+- [ ] Deployed to Harbor VM
+- [ ] Tools visible in Claude when MCP connected
+- [ ] End-to-end messaging test between agents
 
