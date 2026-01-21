@@ -65,9 +65,9 @@ curl -I http://10.0.1.50 2>&1 | head -5
 gh issue list --repo unmanned-systems-uk/homegate --limit 10
 ```
 
-**CCPM agent messages:**
+**CCPM agent messages (HomeGate Agent):**
 ```bash
-curl -s "http://10.0.1.210:8000/api/v1/agent-messages/inbox?agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222&status=pending" | python3 -m json.tool
+curl -s "http://10.0.1.210:8000/api/v1/agent-messages/inbox?agent_id=11111111-aaaa-bbbb-cccc-000000000007&status=pending" | python3 -m json.tool
 ```
 
 **Database connectivity:**
@@ -243,7 +243,8 @@ When this command is active, you have authority to:
 
 ## Integration with CCPM V2
 
-### HomeLab Agent Coordination
+### HomeGate Agent Identity
+- **HomeGate Agent ID:** `11111111-aaaa-bbbb-cccc-000000000007`
 - **HomeLab Agent ID:** `aaaaaaaa-bbbb-cccc-dddd-222222222222`
 - **CCPM API:** http://10.0.1.210:8000/api/v1
 - **Message Types:** task_assignment, status_request, query, alert, info
@@ -257,11 +258,11 @@ HomeGate integrates with HomeLab infrastructure:
 
 ### Messaging Commands
 ```bash
-# Check for messages from HomeLab agent
-curl -s "http://10.0.1.210:8000/api/v1/agent-messages/inbox?agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222&status=pending"
+# Check HomeGate inbox
+curl -s "http://10.0.1.210:8000/api/v1/agent-messages/inbox?agent_id=11111111-aaaa-bbbb-cccc-000000000007&status=pending"
 
-# Send status update to HomeLab agent
-curl -X POST "http://10.0.1.210:8000/api/v1/agent-messages?from_agent_id=aaaaaaaa-bbbb-cccc-dddd-222222222222" \
+# Send message to HomeLab agent
+curl -X POST "http://10.0.1.210:8000/api/v1/agent-messages?from_agent_id=11111111-aaaa-bbbb-cccc-000000000007" \
   -H "Content-Type: application/json" \
   -d '{
     "to_agent_id": "aaaaaaaa-bbbb-cccc-dddd-222222222222",
