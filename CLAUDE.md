@@ -196,9 +196,38 @@ ping -c 1 -W 1 10.0.1.1
 
 | Tool | Purpose |
 |------|---------|
-| **Context7** | Library documentation lookup |
+| **HomeLab MCP** | Infrastructure tools (Harbor @ 10.0.1.202) |
 | **UniFi MCP** | Network visibility (UDM Pro @ 10.0.1.1) |
 | **Home Assistant MCP** | Smart home control (HA @ 10.0.1.150) |
+| **Context7** | Library documentation lookup |
+
+### HomeLab MCP Server (IMPORTANT)
+
+**This is our primary infrastructure MCP server - use it for extending capabilities.**
+
+| Parameter | Value |
+|-----------|-------|
+| **Container** | `homelab-mcp` (homelab-infra:latest) |
+| **Location** | Harbor VM (10.0.1.202) |
+| **Endpoint** | `http://10.0.1.202:8080/sse` |
+| **Framework** | FastMCP 2.0+ |
+| **Transport** | SSE (Server-Sent Events) |
+| **Source Code** | `mcp-servers/homelab-infra/homelab_server.py` |
+| **Documentation** | `docs/homelab-mcp-server-structure.md` |
+
+**Current 8 Tools:**
+| Tool | Purpose |
+|------|---------|
+| `homelab_list_vms()` | List all VMs |
+| `homelab_get_vm()` | Get VM details |
+| `homelab_get_credentials()` | Get credentials (audit logged) |
+| `homelab_list_services()` | List services |
+| `homelab_check_service_health()` | HTTP health check |
+| `homelab_list_hosts()` | List Proxmox hosts |
+| `homelab_get_host()` | Get host details |
+| `homelab_lookup_ip()` | Lookup IP allocation |
+
+**Extension:** To add new MCP tools (e.g., CCPM messaging), extend `homelab_server.py` - do NOT create new servers.
 
 ### Home Assistant MCP Tools
 
