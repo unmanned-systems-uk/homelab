@@ -1,7 +1,7 @@
 # HomeLab MCP Server - Current Structure
 
 **Created:** 2025-12-15
-**Updated:** 2026-01-21 (CCPM Integration)
+**Updated:** 2026-01-21 (CCPM Integration v2 - Session API Fix)
 **Status:** Production (running on Harbor VM)
 **Purpose:** Documentation of existing MCP server for evaluation and extension
 
@@ -56,7 +56,7 @@
 
 ## Current MCP Tools
 
-### 23 Tools Implemented
+### 25 Tools Implemented
 
 #### HomeLab Infrastructure Tools (11 tools)
 
@@ -83,7 +83,7 @@
 | `ccpm_check_inbox(agent_id, include_read)` | Check agent inbox for messages | Agent auth |
 | `ccpm_mark_message_complete(msg_id, response)` | Mark message as complete | Agent auth |
 
-#### CCPM Task Management Tools (5 tools)
+#### CCPM Task Management Tools (4 tools)
 
 | Tool | Purpose | Security |
 |------|---------|----------|
@@ -99,12 +99,16 @@
 | `ccpm_get_active_sprint()` | Get current active sprint | Read-only |
 | `ccpm_list_sprints(status)` | List sprints with filter | Read-only |
 
-#### CCPM Session Logging Tools (2 tools)
+#### CCPM Session Logging Tools (4 tools)
 
 | Tool | Purpose | Security |
 |------|---------|----------|
-| `ccpm_create_session(agent, type, desc)` | Create session log | Agent auth |
-| `ccpm_log_session_entry(id, type, content)` | Add entry to session log | Agent auth |
+| `ccpm_create_session(agent_id, agent_tag, trigger_type, summary)` | Create session report | Agent auth |
+| `ccpm_log_session_context(report_id, context_type, context_key, value)` | Log context item | Agent auth |
+| `ccpm_complete_session(report_id, summary, metrics...)` | Complete session with metrics | Agent auth |
+| `ccpm_get_resume_context(agent_id)` | Get resume context from last session | Agent auth |
+
+**Note:** Session tools use `/api/v1/session-reports` endpoint (not `/api/sessions`).
 
 ---
 
@@ -119,7 +123,7 @@
 **Encryption:** Fernet (AES-128 via cryptography library)
 **HTTP Client:** httpx (for health checks and CCPM API calls)
 **External APIs:**
-- CCPM Task API: http://10.0.1.210:8080/api
+- CCPM Task API: http://10.0.1.210:8000/api
 - CCPM Messaging API: http://10.0.1.210:8000/api/v1
 
 ### Data Flow
@@ -201,22 +205,33 @@ psycopg2-binary>=2.9.0  # PostgreSQL database driver
 docker run -d \
   --name homelab-mcp \
   --network openwebui-net \
-  -p 8080:8000 \
-  -v /home/ccpm/data/homelab.db:/data/homelab.db:ro \
+  -p 8080:8080 \
+  -e HOMELAB_DB_HOST=10.0.1.251 \
+  -e HOMELAB_DB_PORT=5433 \
+  -e HOMELAB_DB_NAME=homelab_db \
+  -e HOMELAB_DB_USER=ccpm \
+  -e HOMELAB_DB_PASSWORD=CcpmDb2025Secure \
+  -e CCPM_MESSAGING_API=http://10.0.1.210:8000/api/v1 \
+  -e CCPM_TASK_API=http://10.0.1.210:8000/api \
+  -e CCPM_AGENT_ID=aaaaaaaa-bbbb-cccc-dddd-222222222222 \
+  --restart unless-stopped \
   homelab-infra:latest
 ```
 
-**Volume Mounts:**
-- Database: `/home/ccpm/data/homelab.db` → `/data/homelab.db` (read-only)
-
 **Network:**
 - Bridge network: `openwebui-net`
-- Port mapping: 8080 (host) → 8000 (container)
+- Port mapping: 8080 (host) → 8080 (container)
 
 **Environment Variables:**
-- `HOMELAB_DB_PATH=/data/homelab.db` (default)
+- `HOMELAB_DB_HOST` - PostgreSQL host (10.0.1.251)
+- `HOMELAB_DB_PORT` - PostgreSQL port (5433)
+- `HOMELAB_DB_NAME` - Database name (homelab_db)
+- `HOMELAB_DB_USER` - Database user (ccpm)
+- `HOMELAB_DB_PASSWORD` - Database password
 - `HOMELAB_DB_KEY` (optional, for credential decryption)
-- `MCP_PORT=8080` (SSE server port)
+- `CCPM_MESSAGING_API` - Messaging API base URL
+- `CCPM_TASK_API` - Task API base URL
+- `CCPM_AGENT_ID` - Agent UUID for outgoing messages
 
 ---
 
@@ -598,20 +613,20 @@ Based on agent feedback across multiple projects:
 ### Environment Variables
 
 ```bash
-# CCPM API endpoints
-CCPM_TASK_API=http://10.0.1.210:8080/api
+# CCPM API endpoints (both on port 8000)
+CCPM_TASK_API=http://10.0.1.210:8000/api
 CCPM_MESSAGING_API=http://10.0.1.210:8000/api/v1
 
 # Agent identity (for sending messages)
-CCPM_AGENT_ID=<agent-uuid>
+CCPM_AGENT_ID=aaaaaaaa-bbbb-cccc-dddd-222222222222  # HomeLab-Agent
 ```
 
 ### Tool Categories
 
 1. **Agent Messaging (4 tools)** - Inter-agent communication
-2. **Task Management (5 tools)** - CCPM task operations
+2. **Task Management (4 tools)** - CCPM task operations
 3. **Sprint Management (2 tools)** - Sprint queries
-4. **Session Logging (2 tools)** - Session tracking
+4. **Session Logging (4 tools)** - Session reports via `/api/v1/session-reports`
 
 ### Deployment Notes
 
@@ -624,24 +639,30 @@ When deploying updated container:
    docker run -d \
      --name homelab-mcp \
      --network openwebui-net \
-     -p 8080:8000 \
-     -e CCPM_TASK_API=http://10.0.1.210:8080/api \
+     -p 8080:8080 \
+     -e CCPM_TASK_API=http://10.0.1.210:8000/api \
      -e CCPM_MESSAGING_API=http://10.0.1.210:8000/api/v1 \
-     -e CCPM_AGENT_ID=<agent-uuid> \
+     -e CCPM_AGENT_ID=aaaaaaaa-bbbb-cccc-dddd-222222222222 \
      -e HOMELAB_DB_HOST=10.0.1.251 \
      -e HOMELAB_DB_PORT=5433 \
-     -e HOMELAB_DB_PASSWORD=<password> \
+     -e HOMELAB_DB_NAME=homelab_db \
+     -e HOMELAB_DB_USER=ccpm \
+     -e HOMELAB_DB_PASSWORD=CcpmDb2025Secure \
+     --restart unless-stopped \
      homelab-infra:latest
    ```
 
 ### Testing Checklist
 
-- [x] All 12 CCPM tools implemented
+- [x] All 14 CCPM tools implemented (4 messaging + 4 task + 2 sprint + 4 session)
 - [x] Agent name → UUID resolution working
 - [x] Error handling returns structured responses
 - [x] Python syntax validation passed
-- [ ] Container rebuilt and tested
-- [ ] Deployed to Harbor VM
+- [x] Test suite created (15 tests, all passing)
+- [x] CCPM_TASK_API port fixed (8080 → 8000)
+- [x] Session tools use correct endpoint (/api/v1/session-reports)
+- [x] Container rebuilt and tested
+- [x] Deployed to Harbor VM (http://10.0.1.202:8080/sse)
 - [ ] Tools visible in Claude when MCP connected
 - [ ] End-to-end messaging test between agents
 
