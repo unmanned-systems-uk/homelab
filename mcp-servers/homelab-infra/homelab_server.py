@@ -1113,43 +1113,132 @@ def ccpm_list_sprints(status: str = None) -> list[dict]:
 
 
 # ==================== Session Logging Tools ====================
+# Note: Session reports use /api/v1/session-reports endpoint (CCPM_MESSAGING_API)
 
 @mcp.tool()
 def ccpm_create_session(
-    agent_name: str,
-    session_type: str = "work",
-    description: str = None
+    agent_id: str = None,
+    agent_tag: str = "[HomeLab]",
+    trigger_type: str = "manual",
+    summary: str = None
 ) -> dict:
     """
-    Create a new session log entry.
+    Create a new session report.
 
     Args:
-        agent_name: Name of the agent creating the session
-        session_type: Type of session (work, planning, review)
-        description: Optional session description
+        agent_id: UUID of the agent (defaults to CCPM_AGENT_ID env var)
+        agent_tag: Agent tag for display (default: [HomeLab])
+        trigger_type: How session was triggered (manual, scheduled)
+        summary: Optional initial summary/description
 
     Returns:
-        Created session with session_id
+        Created session report with id
     """
-    valid_types = ["work", "planning", "review"]
+    from datetime import datetime, timezone
 
-    if session_type not in valid_types:
+    aid = agent_id or CCPM_AGENT_ID
+    if not aid:
         return {
             "success": False,
-            "error": f"Invalid session_type. Must be one of: {', '.join(valid_types)}",
-            "error_code": "INVALID_SESSION_TYPE"
+            "error": "agent_id required (set CCPM_AGENT_ID env var or pass explicitly)",
+            "error_code": "MISSING_AGENT_ID"
+        }
+
+    valid_triggers = ["manual", "scheduled"]
+    if trigger_type not in valid_triggers:
+        return {
+            "success": False,
+            "error": f"Invalid trigger_type. Must be one of: {', '.join(valid_triggers)}",
+            "error_code": "INVALID_TRIGGER_TYPE"
+        }
+
+    try:
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        # API requires session_ended_at even for in-progress sessions (use placeholder)
+        payload = {
+            "agent_id": aid,
+            "agent_tag": agent_tag,
+            "trigger_type": trigger_type,
+            "session_date": now.strftime("%Y-%m-%d"),
+            "session_started_at": now.isoformat(),
+            "session_ended_at": (now + timedelta(seconds=1)).isoformat(),  # Placeholder
+            "duration_minutes": 0,
+            "status": "in_progress"
+        }
+        if summary:
+            payload["summary"] = summary
+
+        response = httpx.post(
+            f"{CCPM_MESSAGING_API}/session-reports",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        error_detail = ""
+        try:
+            error_detail = e.response.json()
+        except Exception:
+            error_detail = e.response.text
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "detail": error_detail,
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_log_session_context(
+    report_id: str,
+    context_type: str,
+    context_key: str,
+    context_value: str = None,
+    token_count: int = None
+) -> dict:
+    """
+    Add a context item to a session report.
+
+    Args:
+        report_id: Session report UUID
+        context_type: Type of context (file_read, tool_call, search, api_call)
+        context_key: File path or identifier
+        context_value: Optional description
+        token_count: Optional token count for this context
+
+    Returns:
+        Created context entry or error
+    """
+    valid_types = ["file_read", "tool_call", "search", "api_call"]
+
+    if context_type not in valid_types:
+        return {
+            "success": False,
+            "error": f"Invalid context_type. Must be one of: {', '.join(valid_types)}",
+            "error_code": "INVALID_CONTEXT_TYPE"
         }
 
     try:
         payload = {
-            "agent_name": agent_name,
-            "session_type": session_type
+            "context_type": context_type,
+            "context_key": context_key
         }
-        if description:
-            payload["description"] = description
+        if context_value:
+            payload["context_value"] = context_value
+        if token_count:
+            payload["token_count"] = token_count
 
         response = httpx.post(
-            f"{CCPM_TASK_API}/sessions",
+            f"{CCPM_MESSAGING_API}/session-reports/{report_id}/contexts",
             json=payload,
             timeout=10.0
         )
@@ -1171,39 +1260,58 @@ def ccpm_create_session(
 
 
 @mcp.tool()
-def ccpm_log_session_entry(
-    session_id: int,
-    entry_type: str,
-    content: str
+def ccpm_complete_session(
+    report_id: str,
+    summary: str,
+    completed_items: list[str] = None,
+    in_progress_items: list[str] = None,
+    blockers: list[str] = None,
+    handoff_notes: str = None,
+    tasks_completed: int = 0,
+    files_modified: int = 0,
+    commits_made: int = 0,
+    total_tokens: int = None
 ) -> dict:
     """
-    Add a log entry to an existing session.
+    Complete a session report with summary and metrics.
 
     Args:
-        session_id: Session ID
-        entry_type: Type of entry (start, progress, decision, issue, complete)
-        content: Entry content text
+        report_id: Session report UUID
+        summary: Session summary text
+        completed_items: List of completed task descriptions
+        in_progress_items: List of in-progress items
+        blockers: List of blockers encountered
+        handoff_notes: Notes for next session
+        tasks_completed: Number of tasks completed
+        files_modified: Number of files modified
+        commits_made: Number of git commits
+        total_tokens: Total tokens used in session
 
     Returns:
-        Created entry or error
+        Updated session report or error
     """
-    valid_types = ["start", "progress", "decision", "issue", "complete"]
-
-    if entry_type not in valid_types:
-        return {
-            "success": False,
-            "error": f"Invalid entry_type. Must be one of: {', '.join(valid_types)}",
-            "error_code": "INVALID_ENTRY_TYPE"
-        }
+    from datetime import datetime, timezone
 
     try:
+        now = datetime.now(timezone.utc)
         payload = {
-            "entry_type": entry_type,
-            "content": content
+            "session_ended_at": now.isoformat(),
+            "status": "completed",
+            "summary": summary,
+            "completed_items": completed_items or [],
+            "in_progress_items": in_progress_items or [],
+            "blockers": blockers or [],
+            "tasks_completed": tasks_completed,
+            "files_modified": files_modified,
+            "commits_made": commits_made
         }
+        if handoff_notes:
+            payload["handoff_notes"] = handoff_notes
+        if total_tokens:
+            payload["total_tokens"] = total_tokens
 
-        response = httpx.post(
-            f"{CCPM_TASK_API}/sessions/{session_id}/entries",
+        response = httpx.put(
+            f"{CCPM_MESSAGING_API}/session-reports/{report_id}",
             json=payload,
             timeout=10.0
         )
@@ -1211,6 +1319,53 @@ def ccpm_log_session_entry(
         return response.json()
 
     except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_get_resume_context(agent_id: str = None) -> dict:
+    """
+    Get resume context from the most recent session.
+
+    Args:
+        agent_id: UUID of the agent (defaults to CCPM_AGENT_ID env var)
+
+    Returns:
+        Resume context from last session or error
+    """
+    aid = agent_id or CCPM_AGENT_ID
+    if not aid:
+        return {
+            "success": False,
+            "error": "agent_id required (set CCPM_AGENT_ID env var or pass explicitly)",
+            "error_code": "MISSING_AGENT_ID"
+        }
+
+    try:
+        response = httpx.get(
+            f"{CCPM_MESSAGING_API}/session-reports/resume/{aid}",
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {
+                "success": False,
+                "error": "No previous sessions found",
+                "error_code": "NO_SESSIONS"
+            }
         return {
             "success": False,
             "error": f"API error: {e.response.status_code}",

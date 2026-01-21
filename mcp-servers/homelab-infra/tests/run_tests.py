@@ -217,20 +217,50 @@ class CCPMClient:
             return data["sprints"]
         return data if isinstance(data, list) else []
 
-    def create_session(self, agent_name: str, session_type: str = "work", description: str = None) -> dict:
-        """Create a session."""
-        url = f"{self.task_api}/sessions"
-        payload = {"agent_name": agent_name, "session_type": session_type}
-        if description:
-            payload["description"] = description
+    def create_session(self, agent_id: str = None, agent_tag: str = "[HomeLab]", summary: str = None) -> dict:
+        """Create a session report using the correct API."""
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        # API requires session_ended_at even for in-progress sessions (use placeholder)
+        url = f"{self.messaging_api}/session-reports"
+        payload = {
+            "agent_id": agent_id or self.agent_id,
+            "agent_tag": agent_tag,
+            "trigger_type": "manual",
+            "session_date": now.strftime("%Y-%m-%d"),
+            "session_started_at": now.isoformat(),
+            "session_ended_at": (now + timedelta(seconds=1)).isoformat(),  # Placeholder
+            "duration_minutes": 0,
+            "status": "in_progress"
+        }
+        if summary:
+            payload["summary"] = summary
         status, data = http_request(url, "POST", payload)
         return data
 
-    def log_session_entry(self, session_id: int, entry_type: str, content: str) -> dict:
-        """Log session entry."""
-        url = f"{self.task_api}/sessions/{session_id}/entries"
-        payload = {"entry_type": entry_type, "content": content}
+    def log_session_context(self, report_id: str, context_type: str, context_key: str, context_value: str = None) -> dict:
+        """Log session context."""
+        url = f"{self.messaging_api}/session-reports/{report_id}/contexts"
+        payload = {"context_type": context_type, "context_key": context_key}
+        if context_value:
+            payload["context_value"] = context_value
         status, data = http_request(url, "POST", payload)
+        return data
+
+    def complete_session(self, report_id: str, summary: str) -> dict:
+        """Complete a session report."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        url = f"{self.messaging_api}/session-reports/{report_id}"
+        payload = {
+            "session_ended_at": now.isoformat(),
+            "status": "completed",
+            "summary": summary,
+            "completed_items": [],
+            "in_progress_items": [],
+            "blockers": []
+        }
+        status, data = http_request(url, "PUT", payload)
         return data
 
 
@@ -287,14 +317,14 @@ def run_functional_tests(client: CCPMClient, results: TestResults):
     except Exception as e:
         results.record("list_sprints", False, str(e))
 
-    # Test: create_session
+    # Test: create_session (using session-reports API)
     try:
         session = client.create_session(
-            agent_name=TEST_AGENT_NAME,
-            session_type="work",
-            description="[TEST] Functional test session"
+            agent_id=TEST_AGENT_ID,
+            agent_tag="[HomeLab]",
+            summary="[TEST] Functional test session"
         )
-        session_id = session.get("id") or session.get("session_id")
+        session_id = session.get("id")
         results.record("create_session", bool(session_id) or not session.get("error"), f"Response: {session}")
     except Exception as e:
         results.record("create_session", False, str(e))
@@ -415,26 +445,27 @@ def run_integration_tests(client: CCPMClient, results: TestResults):
     except Exception as e:
         results.record("message_lifecycle", False, str(e))
 
-    # Test: session workflow
+    # Test: session workflow (using /api/v1/session-reports)
     try:
-        # Create session
+        # Create session report
         session = client.create_session(
-            agent_name=TEST_AGENT_NAME,
-            session_type="work",
-            description="[TEST] Integration workflow"
+            agent_id=TEST_AGENT_ID,
+            agent_tag="[HomeLab]",
+            summary="[TEST] Integration workflow"
         )
-        session_id = session.get("id") or session.get("session_id")
+        report_id = session.get("id")
 
-        if not session_id:
+        if not report_id:
             results.record("session_workflow", False, f"Create failed: {session}")
         else:
-            # Log entries
-            entry1 = client.log_session_entry(session_id, "start", "Beginning test")
-            entry2 = client.log_session_entry(session_id, "progress", "Test step")
-            entry3 = client.log_session_entry(session_id, "complete", "Test done")
+            # Log context
+            ctx = client.log_session_context(report_id, "file_read", "test_file.py", "Test context")
 
-            passed = not any(e.get("error") for e in [entry1, entry2, entry3])
-            results.record("session_workflow", passed, f"Entries: {entry3}")
+            # Complete session
+            complete = client.complete_session(report_id, "Integration test completed")
+
+            passed = complete.get("status") == "completed" or not complete.get("error")
+            results.record("session_workflow", passed, f"Complete response: {complete}")
     except Exception as e:
         results.record("session_workflow", False, str(e))
 
