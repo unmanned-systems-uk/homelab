@@ -1,9 +1,10 @@
 # End of Day Report - 2026-01-21
 
 ## Session Overview
-- **Duration:** ~2.5 hours
+- **Duration:** Full day (~12 hours)
 - **Status:** Completed
 - **Agent:** HomeLab-Agent (aaaaaaaa-bbbb-cccc-dddd-222222222222)
+- **Database Report ID:** 46721f82-3f8b-4c82-8ee0-42f81c0b1922
 
 ---
 
@@ -12,13 +13,16 @@
 ### Git Activity
 | Metric | Value |
 |--------|-------|
-| Commits | 1 |
-| Files Modified | 1 |
-| Lines Added | +30 |
-| Lines Removed | -1 |
+| Commits | 4 |
+| Files Modified | 4 |
+| Lines Added | +764 |
+| Lines Removed | -8 |
 
 ### Commits Made
 ```
+192672a fix(commands): Update start-homegate with correct HomeGate agent ID
+a7c5a5f feat: Add Cloudflare tunnel skill and start-homegate command
+2c83a34 docs: Add session summary for 2026-01-21
 1b4345e docs: Add HomeLab MCP server to CLAUDE.md
 ```
 
@@ -65,6 +69,45 @@ Investigated reports of HomeGate, Home Assistant, and Claude Desktop being down 
 - Clear instruction to extend existing server, not create new ones
 - Committed: `1b4345e`
 
+### Cloudflare Tunnel Skill Added (Afternoon)
+Created new skill for managing Cloudflare tunnels:
+- Location: `.claude/skills/cloudflare/SKILL.md`
+- Action: `restart-cloudflare-tunnel` for HomeGate recovery
+- Documents cloudflared container management patterns
+- Committed: `a7c5a5f`
+
+### Start-HomeGate Command Created
+New slash command for transitioning to HomeGate agent work:
+- Location: `.claude/commands/start-homegate.md`
+- Spawns HG-Master agent via CCPM messaging
+- Sets up development context
+- Fixed agent ID to correct HomeGate UUID: `192672a`
+
+### HomeGate Agent Restructuring (Evening - via HomeGate repo)
+Major refactoring of HomeGate agent structure per CCPM V2 PROJECT_SETUP.md:
+
+**Problem Identified:**
+- Global `agents/.claude/` directory was polluting all sub-agents
+- Claude Code walks up directory tree merging all `.claude/` directories
+- Any MCP, skill, or plugin added would bloat ALL agents
+
+**Solution Implemented:**
+- Removed polluting `agents/.claude/` directory
+- Each agent now has isolated `.claude/` with own configuration
+- Renamed `AGENT.md` → `CLAUDE.md` per standard
+- Added `settings.json` with UUID and API endpoints
+- Created symlinks to CC-Share for shared commands
+
+**Agent UUIDs Assigned:**
+| Agent | UUID | tmux |
+|-------|------|------|
+| HG-Master | `11111111-aaaa-bbbb-cccc-000000000007` | `hg-master` |
+| HG-Frontend | `11111111-aaaa-bbbb-cccc-000000000008` | `hg-frontend` |
+| HG-Backend | `11111111-aaaa-bbbb-cccc-000000000009` | `hg-backend` |
+| HG-DevOps | `11111111-aaaa-bbbb-cccc-00000000000a` | `hg-devops` |
+
+**HomeGate Commit:** `e7c2892` (30 files changed, 558 insertions, 1966 deletions)
+
 ---
 
 ## Blockers / Issues
@@ -81,14 +124,23 @@ Investigated reports of HomeGate, Home Assistant, and Claude Desktop being down 
 ## Handoff Notes for Next Session
 
 ### Immediate Priority
-- **MCP Expansion:** Director will send task to extend HomeLab MCP with CCPM messaging tools
-- **HomeGate Agents:** User starting new session with `/start-homegate` to work with HomeGate agent team
+- **Messaging MCP Build:** User ready to spawn HomeGate agents and build messaging MCP
+- **Manual Step Needed:** User must run `sudo ln -s /home/homelab/cc-share /mnt/CC-Share`
 
 ### Key Context
-1. **HomeLab MCP Server** exists on Harbor VM (10.0.1.202:8080/sse) - extend this for CCPM tools
-2. **Source code:** `mcp-servers/homelab-infra/homelab_server.py`
-3. **Framework:** FastMCP 2.0+
-4. **Agent ID confusion:** Multiple HL-* agents registered but dormant; use `aaaaaaaa-bbbb-cccc-dddd-222222222222` for HomeLab-Agent
+1. **HomeGate Agents Ready:** All 4 agents restructured with isolated `.claude/` directories
+2. **HomeLab MCP Server** exists on Harbor VM (10.0.1.202:8080/sse) - extend for CCPM tools
+3. **Source code:** `mcp-servers/homelab-infra/homelab_server.py`
+4. **Framework:** FastMCP 2.0+
+5. **PROJECT_SETUP.md:** New comprehensive guide at `~/cc-share/docs/ccpm-api/PROJECT_SETUP.md`
+
+### Agent Working Directories
+| Agent | Working Directory | tmux |
+|-------|-------------------|------|
+| HG-Master | `/home/homelab/HomeGate/agents/homegate` | `hg-master` |
+| HG-Frontend | `/home/homelab/HomeGate/agents/frontend` | `hg-frontend` |
+| HG-Backend | `/home/homelab/HomeGate/agents/backend` | `hg-backend` |
+| HG-DevOps | `/home/homelab/HomeGate/agents/devops` | `hg-devops` |
 
 ### Recommended Slash Command
 **`/start-homegate`** - For HomeGate agent team work and MCP development
@@ -106,4 +158,4 @@ Investigated reports of HomeGate, Home Assistant, and Claude Desktop being down 
 
 *HomeLab Agent - End of Day Report*
 *Database: ccpm_db @ 10.0.1.251:5433*
-*Generated: 2026-01-21T15:45:00Z*
+*Generated: 2026-01-21T21:45:00Z (Updated)*
