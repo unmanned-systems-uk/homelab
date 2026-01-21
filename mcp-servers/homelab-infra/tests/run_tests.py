@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # =============================================================================
 
 CCPM_MESSAGING_API = "http://10.0.1.210:8000/api/v1"
-CCPM_TASK_API = "http://10.0.1.210:8080/api"
+CCPM_TASK_API = "http://10.0.1.210:8000/api"  # Same port as messaging
 TEST_AGENT_ID = "aaaaaaaa-bbbb-cccc-dddd-222222222222"
 TEST_AGENT_NAME = "HomeLab-Agent"
 # Use a different agent as target to avoid "cannot send to yourself" error

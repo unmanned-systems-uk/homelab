@@ -561,7 +561,7 @@ def homelab_infrastructure_summary() -> dict:
 # ==================== CCPM Integration ====================
 
 # CCPM API endpoints
-CCPM_TASK_API = os.environ.get("CCPM_TASK_API", "http://10.0.1.210:8080/api")
+CCPM_TASK_API = os.environ.get("CCPM_TASK_API", "http://10.0.1.210:8000/api")
 CCPM_MESSAGING_API = os.environ.get("CCPM_MESSAGING_API", "http://10.0.1.210:8000/api/v1")
 
 # Agent cache (5 minute TTL)

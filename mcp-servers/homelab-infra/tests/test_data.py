@@ -4,7 +4,7 @@ Test data and constants for CCPM MCP tools testing.
 
 # API Endpoints
 CCPM_MESSAGING_API = "http://10.0.1.210:8000/api/v1"
-CCPM_TASK_API = "http://10.0.1.210:8080/api"
+CCPM_TASK_API = "http://10.0.1.210:8000/api"  # Same port as messaging
 MCP_ENDPOINT = "http://10.0.1.202:8080"
 
 # Test Agent
