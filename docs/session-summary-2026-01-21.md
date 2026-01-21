@@ -4,7 +4,7 @@
 - **Duration:** Full day (~12 hours)
 - **Status:** Completed
 - **Agent:** HomeLab-Agent (aaaaaaaa-bbbb-cccc-dddd-222222222222)
-- **Database Report ID:** 46721f82-3f8b-4c82-8ee0-42f81c0b1922
+- **Database Report ID:** bc32bb75-04f6-4145-8d9b-8626c34c6c99
 
 ---
 
@@ -13,13 +13,14 @@
 ### Git Activity
 | Metric | Value |
 |--------|-------|
-| Commits | 4 |
+| Commits | 5 |
 | Files Modified | 4 |
-| Lines Added | +764 |
-| Lines Removed | -8 |
+| Lines Added | +828 |
+| Lines Removed | -20 |
 
 ### Commits Made
 ```
+98de158 docs: Update session summary for 2026-01-21
 192672a fix(commands): Update start-homegate with correct HomeGate agent ID
 a7c5a5f feat: Add Cloudflare tunnel skill and start-homegate command
 2c83a34 docs: Add session summary for 2026-01-21
@@ -124,26 +125,36 @@ Major refactoring of HomeGate agent structure per CCPM V2 PROJECT_SETUP.md:
 ## Handoff Notes for Next Session
 
 ### Immediate Priority
-- **Messaging MCP Build:** User ready to spawn HomeGate agents and build messaging MCP
+- **MCP CCPM Extension:** Delegated to HG-Backend - implementing 12 CCPM tools
 - **Manual Step Needed:** User must run `sudo ln -s /home/homelab/cc-share /mnt/CC-Share`
 
 ### Key Context
-1. **HomeGate Agents Ready:** All 4 agents restructured with isolated `.claude/` directories
-2. **HomeLab MCP Server** exists on Harbor VM (10.0.1.202:8080/sse) - extend for CCPM tools
-3. **Source code:** `mcp-servers/homelab-infra/homelab_server.py`
-4. **Framework:** FastMCP 2.0+
-5. **PROJECT_SETUP.md:** New comprehensive guide at `~/cc-share/docs/ccpm-api/PROJECT_SETUP.md`
+1. **HomeGate Agents Running:** All 4 agents active in tmux sessions
+2. **HG-Backend assigned:** MCP CCPM extension task
+3. **HG-DevOps on standby:** For deployment when implementation complete
+4. **HomeLab MCP Server:** Harbor VM (10.0.1.202:8080/sse)
+5. **Source code:** `mcp-servers/homelab-infra/homelab_server.py`
 
-### Agent Working Directories
-| Agent | Working Directory | tmux |
-|-------|-------------------|------|
-| HG-Master | `/home/homelab/HomeGate/agents/homegate` | `hg-master` |
-| HG-Frontend | `/home/homelab/HomeGate/agents/frontend` | `hg-frontend` |
-| HG-Backend | `/home/homelab/HomeGate/agents/backend` | `hg-backend` |
-| HG-DevOps | `/home/homelab/HomeGate/agents/devops` | `hg-devops` |
+### Active Agent Sessions
+| tmux Session | Agent | Status |
+|--------------|-------|--------|
+| `HG-backend-5` | HG-Backend | Implementing MCP tools |
+| `devops-7` | HG-DevOps | Standby for deployment |
+| `HG-Frontend-6` | HG-Frontend | Available |
+| `HL-Master-4` | HomeLab-Agent | Coordinating |
 
-### Recommended Slash Command
-**`/start-homegate`** - For HomeGate agent team work and MCP development
+### MCP Extension Task (In Progress)
+12 CCPM tools to implement:
+1. `ccpm_list_agents()` - with agent name resolution
+2. `ccpm_send_message()` - send to agent by name or UUID
+3. `ccpm_check_inbox()` - check pending messages
+4. `ccpm_mark_message_complete()` - mark messages done
+5. `ccpm_get_task()` / `ccpm_list_tasks()` - task management
+6. `ccpm_update_task_status()` / `ccpm_submit_completion_report()`
+7. `ccpm_get_active_sprint()` / `ccpm_list_sprints()`
+8. `ccpm_create_session()` / `ccpm_log_session_entry()`
+
+Spec: `~/cc-share/HomeGate/ISSUE_MCP_CCPM_EXTENSION.md`
 
 ---
 
@@ -151,11 +162,12 @@ Major refactoring of HomeGate agent structure per CCPM V2 PROJECT_SETUP.md:
 
 | To | Subject | Purpose |
 |----|---------|---------|
-| V2-Director | RE: MCP Server Expansion - Agent ID Mixup + Strong Support | Initial response about MCP |
-| V2-Director | CORRECTION: RE: MCP Server Expansion - Use EXISTING HomeLab MCP | Correction about existing infrastructure |
+| V2-Director | RE: MCP Server Expansion | Initial response about MCP |
+| V2-Director | CORRECTION: Use EXISTING HomeLab MCP | Correction about existing infrastructure |
+| HG-Backend | TASK: Extend HomeLab MCP | Delegated implementation task |
 
 ---
 
 *HomeLab Agent - End of Day Report*
 *Database: ccpm_db @ 10.0.1.251:5433*
-*Generated: 2026-01-21T21:45:00Z (Updated)*
+*Generated: 2026-01-21T22:15:00Z (Final)*
