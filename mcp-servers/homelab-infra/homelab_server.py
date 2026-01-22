@@ -561,7 +561,7 @@ def homelab_infrastructure_summary() -> dict:
 # ==================== CCPM Integration ====================
 
 # CCPM API endpoints
-CCPM_TASK_API = os.environ.get("CCPM_TASK_API", "http://10.0.1.210:8000/api")
+CCPM_TASK_API = os.environ.get("CCPM_TASK_API", "http://10.0.1.210:8000/api/v1")
 CCPM_MESSAGING_API = os.environ.get("CCPM_MESSAGING_API", "http://10.0.1.210:8000/api/v1")
 
 # Agent cache (5 minute TTL)
@@ -1377,6 +1377,98 @@ def ccpm_get_resume_context(agent_id: str = None) -> dict:
             "error": str(e),
             "error_code": "REQUEST_FAILED"
         }
+
+
+# ==================== Completion Signaling ====================
+
+# V2-Master UUID for completion notifications
+V2_MASTER_UUID = "4c714f40-d15c-4f0e-bb34-410f2e7e1806"
+
+
+@mcp.tool()
+def ccpm_signal_completion(
+    agent_tag: str,
+    task_id: str,
+    description: str
+) -> dict:
+    """
+    Signal task completion to V2-Master. Updates task status and sends notification.
+
+    Args:
+        agent_tag: WHO tag e.g. "[NEX-Backend]", "[V2-Frontend]", "[HomeLab]"
+        task_id: Task UUID
+        description: Brief description of completed work
+
+    Returns:
+        Result with task update and message status
+    """
+    results = {
+        "task_update": None,
+        "message_sent": None,
+        "success": False
+    }
+
+    # Step 1: Update task status to 'review'
+    try:
+        task_response = httpx.put(
+            f"{CCPM_TASK_API}/tasks/{task_id}",
+            json={"status": "review"},
+            timeout=10.0
+        )
+        task_response.raise_for_status()
+        results["task_update"] = {"success": True, "status": "review"}
+    except httpx.HTTPStatusError as e:
+        results["task_update"] = {
+            "success": False,
+            "error": f"API error: {e.response.status_code}"
+        }
+    except Exception as e:
+        results["task_update"] = {"success": False, "error": str(e)}
+
+    # Step 2: Send completion_signal message to V2-Master
+    try:
+        from_agent = CCPM_AGENT_ID
+        if not from_agent:
+            results["message_sent"] = {
+                "success": False,
+                "error": "CCPM_AGENT_ID not set"
+            }
+        else:
+            msg_payload = {
+                "to_agent_id": V2_MASTER_UUID,
+                "message_type": "completion_signal",
+                "subject": f"{agent_tag} Task Complete: {description}",
+                "body": f"Task {task_id} completed by {agent_tag}.\n\nDescription: {description}",
+                "priority": "normal",
+                "context": {"task_id": task_id}
+            }
+
+            msg_response = httpx.post(
+                f"{CCPM_MESSAGING_API}/agent-messages?from_agent_id={from_agent}",
+                json=msg_payload,
+                timeout=10.0
+            )
+            msg_response.raise_for_status()
+            msg_data = msg_response.json()
+            results["message_sent"] = {
+                "success": True,
+                "message_id": msg_data.get("id")
+            }
+    except httpx.HTTPStatusError as e:
+        results["message_sent"] = {
+            "success": False,
+            "error": f"API error: {e.response.status_code}"
+        }
+    except Exception as e:
+        results["message_sent"] = {"success": False, "error": str(e)}
+
+    # Overall success if both operations succeeded
+    results["success"] = (
+        results["task_update"] and results["task_update"].get("success") and
+        results["message_sent"] and results["message_sent"].get("success")
+    )
+
+    return results
 
 
 # ==================== Run Server ====================
