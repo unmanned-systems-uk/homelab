@@ -36,6 +36,18 @@ DB_CONFIG = {
 # Optional: Encryption key for credentials
 DB_KEY = os.environ.get("HOMELAB_DB_KEY")
 
+# CCPM Database config (for piggyback messaging)
+CCPM_DB_CONFIG = {
+    "host": os.environ.get("CCPM_DB_HOST", "10.0.1.251"),
+    "port": int(os.environ.get("CCPM_DB_PORT", 5433)),
+    "database": os.environ.get("CCPM_DB_NAME", "ccpm_db"),
+    "user": os.environ.get("CCPM_DB_USER", "ccpm"),
+    "password": os.environ.get("CCPM_DB_PASSWORD", "CcpmDb2025Secure"),
+}
+
+# Agent ID for piggyback messaging
+CCPM_AGENT_ID = os.environ.get("CCPM_AGENT_ID", "unknown")
+
 
 # ==================== Database Helpers ====================
 
@@ -80,6 +92,84 @@ def get_encryption():
     except ImportError:
         logger.warning("Encryption module not available, credentials will be masked")
         return None
+
+
+# ==================== Piggyback Messaging Helpers ====================
+
+@contextmanager
+def get_ccpm_db():
+    """Get CCPM database connection for piggyback messaging."""
+    conn = psycopg2.connect(**CCPM_DB_CONFIG)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def fetch_pending_piggyback_messages(recipient: str) -> list[dict]:
+    """
+    Fetch and mark delivered all pending piggyback messages for a recipient.
+    Uses atomic UPDATE...RETURNING to prevent duplicate delivery.
+
+    Args:
+        recipient: Agent ID to fetch messages for
+
+    Returns:
+        List of message dicts with id, from, message, priority, sent_at
+    """
+    try:
+        with get_ccpm_db() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    UPDATE piggyback_messages
+                    SET delivered_at = NOW()
+                    WHERE recipient = %s AND delivered_at IS NULL
+                    RETURNING id, sender, content, priority, created_at
+                """, (recipient,))
+                rows = cur.fetchall()
+                conn.commit()
+
+                if rows:
+                    return [
+                        {
+                            "id": row["id"],
+                            "from": row["sender"],
+                            "message": row["content"],
+                            "priority": row["priority"],
+                            "sent_at": row["created_at"].isoformat() if row["created_at"] else None
+                        }
+                        for row in rows
+                    ]
+                return []
+    except Exception as e:
+        logger.warning(f"Failed to fetch piggyback messages: {e}")
+        return []
+
+
+def inject_piggyback_messages(result: dict, agent_id: str = None) -> dict:
+    """
+    Inject pending piggyback messages into a tool response.
+    Call this at the end of any tool to include pending messages.
+
+    Args:
+        result: The tool's original response dict
+        agent_id: Override agent ID (defaults to CCPM_AGENT_ID)
+
+    Returns:
+        Result dict with _inbox field if messages are pending
+    """
+    recipient = agent_id or CCPM_AGENT_ID
+    if recipient == "unknown":
+        return result
+
+    messages = fetch_pending_piggyback_messages(recipient)
+    if messages:
+        if isinstance(result, dict):
+            result["_inbox"] = messages
+        else:
+            result = {"result": result, "_inbox": messages}
+
+    return result
 
 
 # ==================== Device Tools ====================
@@ -1461,6 +1551,199 @@ def ccpm_get_resume_context(agent_id: str = None) -> dict:
             "success": False,
             "error": str(e),
             "error_code": "REQUEST_FAILED"
+        }
+
+
+# ==================== Piggyback Messaging Tools ====================
+
+@mcp.tool()
+def piggyback_send_message(
+    recipient: str,
+    message: str,
+    priority: int = 5
+) -> dict:
+    """
+    Send a piggyback message to another agent. Message will be delivered
+    in their next MCP tool response.
+
+    Args:
+        recipient: Target agent ID (e.g., 'HomeLab-Agent', 'V2-Master', or UUID)
+        message: Message content
+        priority: 1-3 critical, 4-6 normal, 7-10 low (default: 5)
+
+    Returns:
+        Confirmation with message ID
+    """
+    if priority < 1 or priority > 10:
+        return {
+            "success": False,
+            "error": "Priority must be between 1 and 10",
+            "error_code": "VALIDATION_ERROR"
+        }
+
+    sender = CCPM_AGENT_ID
+    if sender == "unknown":
+        return {
+            "success": False,
+            "error": "CCPM_AGENT_ID not configured",
+            "error_code": "CONFIG_ERROR"
+        }
+
+    try:
+        with get_ccpm_db() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    INSERT INTO piggyback_messages (sender, recipient, content, priority)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id, created_at
+                """, (sender, recipient, message, priority))
+                row = cur.fetchone()
+                conn.commit()
+
+                return {
+                    "success": True,
+                    "message_id": row["id"],
+                    "recipient": recipient,
+                    "priority": priority,
+                    "sent_at": row["created_at"].isoformat() if row["created_at"] else None
+                }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "DB_ERROR"
+        }
+
+
+@mcp.tool()
+def piggyback_check_messages(agent_id: str = None) -> dict:
+    """
+    Check for pending piggyback messages. Messages are marked as delivered
+    when fetched (atomic operation prevents duplicates).
+
+    Args:
+        agent_id: Agent ID to check (defaults to this agent's ID)
+
+    Returns:
+        List of pending messages with id, from, message, priority, sent_at
+    """
+    recipient = agent_id or CCPM_AGENT_ID
+    if recipient == "unknown":
+        return {
+            "success": False,
+            "error": "Agent ID not configured or provided",
+            "error_code": "CONFIG_ERROR"
+        }
+
+    messages = fetch_pending_piggyback_messages(recipient)
+    return {
+        "success": True,
+        "agent_id": recipient,
+        "message_count": len(messages),
+        "messages": messages
+    }
+
+
+@mcp.tool()
+def piggyback_acknowledge_message(message_id: int) -> dict:
+    """
+    Mark a piggyback message as read/acknowledged.
+
+    Args:
+        message_id: ID of the message to acknowledge
+
+    Returns:
+        Confirmation status
+    """
+    try:
+        with get_ccpm_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE piggyback_messages
+                    SET read_at = NOW()
+                    WHERE id = %s AND read_at IS NULL
+                    RETURNING id
+                """, (message_id,))
+                row = cur.fetchone()
+                conn.commit()
+
+                if row:
+                    return {
+                        "success": True,
+                        "message_id": message_id,
+                        "status": "acknowledged"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Message not found or already acknowledged",
+                        "error_code": "NOT_FOUND"
+                    }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "DB_ERROR"
+        }
+
+
+@mcp.tool()
+def piggyback_list_sent_messages(limit: int = 20) -> dict:
+    """
+    List messages sent by this agent.
+
+    Args:
+        limit: Maximum number of messages to return (default: 20)
+
+    Returns:
+        List of sent messages with delivery status
+    """
+    sender = CCPM_AGENT_ID
+    if sender == "unknown":
+        return {
+            "success": False,
+            "error": "CCPM_AGENT_ID not configured",
+            "error_code": "CONFIG_ERROR"
+        }
+
+    try:
+        with get_ccpm_db() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, recipient, content, priority, created_at,
+                           delivered_at, read_at
+                    FROM piggyback_messages
+                    WHERE sender = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                """, (sender, limit))
+                rows = cur.fetchall()
+
+                messages = [
+                    {
+                        "id": row["id"],
+                        "to": row["recipient"],
+                        "message": row["content"],
+                        "priority": row["priority"],
+                        "sent_at": row["created_at"].isoformat() if row["created_at"] else None,
+                        "delivered_at": row["delivered_at"].isoformat() if row["delivered_at"] else None,
+                        "read_at": row["read_at"].isoformat() if row["read_at"] else None,
+                        "status": "read" if row["read_at"] else ("delivered" if row["delivered_at"] else "pending")
+                    }
+                    for row in rows
+                ]
+
+                return {
+                    "success": True,
+                    "sender": sender,
+                    "count": len(messages),
+                    "messages": messages
+                }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "DB_ERROR"
         }
 
 
