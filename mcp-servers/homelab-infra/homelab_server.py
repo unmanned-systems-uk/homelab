@@ -983,6 +983,91 @@ def ccpm_update_task_status(
         }
 
 
+# ==================== Task Instructions Tools ====================
+
+@mcp.tool()
+def ccpm_get_task_instructions(task_id: str) -> dict:
+    """
+    Get all instructions for a task including injected and custom instructions.
+
+    Args:
+        task_id: Task UUID
+
+    Returns:
+        List of instructions with trigger_event, content, is_mandatory, is_custom fields
+    """
+    try:
+        response = httpx.get(
+            f"{CCPM_TASK_API}/tasks/{task_id}/instructions",
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return {"success": True, "instructions": response.json()}
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_add_custom_instruction(
+    task_id: str,
+    content: str,
+    trigger_event: str = "on_start"
+) -> dict:
+    """
+    Add a custom instruction to a task.
+
+    Args:
+        task_id: Task UUID
+        content: Instruction content text
+        trigger_event: When to show instruction (on_start, on_complete, on_review, on_blocked)
+
+    Returns:
+        Created instruction details or error
+    """
+    valid_triggers = ["on_start", "on_complete", "on_review", "on_blocked"]
+    if trigger_event not in valid_triggers:
+        return {
+            "success": False,
+            "error": f"Invalid trigger_event. Must be one of: {valid_triggers}",
+            "error_code": "VALIDATION_ERROR"
+        }
+
+    try:
+        payload = {
+            "content": content,
+            "trigger_event": trigger_event
+        }
+        response = httpx.post(
+            f"{CCPM_TASK_API}/tasks/{task_id}/instructions/custom",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return {"success": True, "instruction": response.json()}
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
 @mcp.tool()
 def ccpm_submit_completion_report(
     task_id: int,
