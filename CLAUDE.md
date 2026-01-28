@@ -58,6 +58,7 @@ gh issue edit <number> --add-label "in-progress" --repo unmanned-systems-uk/home
 4. **Document all changes** in git
 5. **Session summaries** for significant work (`docs/session-summary-YYYY-MM-DD.md`)
 6. **USE homelab_db** for all infrastructure data (NOT ccpm_db)
+7. **UPDATE MCP docs** when adding/modifying MCP tools (see below)
 
 ---
 
@@ -213,21 +214,29 @@ ping -c 1 -W 1 10.0.1.1
 | **Framework** | FastMCP 2.0+ |
 | **Transport** | SSE (Server-Sent Events) |
 | **Source Code** | `mcp-servers/homelab-infra/homelab_server.py` |
-| **Documentation** | `docs/homelab-mcp-server-structure.md` |
+| **Documentation** | `~/cc-share/tools/api-reference/HOMELAB_MCP_REFERENCE.md` |
 
-**Current 8 Tools:**
-| Tool | Purpose |
-|------|---------|
-| `homelab_list_vms()` | List all VMs |
-| `homelab_get_vm()` | Get VM details |
-| `homelab_get_credentials()` | Get credentials (audit logged) |
-| `homelab_list_services()` | List services |
-| `homelab_check_service_health()` | HTTP health check |
-| `homelab_list_hosts()` | List Proxmox hosts |
-| `homelab_get_host()` | Get host details |
-| `homelab_lookup_ip()` | Lookup IP allocation |
+**Current 42 Tools (by category):**
+| Category | Count | Examples |
+|----------|-------|----------|
+| Infrastructure | 9 | `homelab_list_devices`, `homelab_lookup_ip` |
+| CCPM Messaging | 7 | `ccpm_send_message`, `ccpm_check_inbox` |
+| CCPM Tasks | 6 | `ccpm_get_task`, `ccpm_update_task_status` |
+| Session Management | 4 | `ccpm_create_session`, `ccpm_complete_session` |
+| Lessons Learned | 7 | `ccpm_list_lessons`, `ccpm_acknowledge_lesson` |
+| Piggyback Messaging | 4 | `piggyback_send_message`, `piggyback_check_messages` |
+| Other | 5 | `ccpm_signal_completion`, sprint tools |
 
-**Extension:** To add new MCP tools (e.g., CCPM messaging), extend `homelab_server.py` - do NOT create new servers.
+**Full reference:** See `~/cc-share/tools/api-reference/HOMELAB_MCP_REFERENCE.md`
+
+### MCP Documentation Maintenance (CRITICAL RULE 7)
+
+When adding/modifying MCP tools:
+1. Update `~/cc-share/tools/api-reference/HOMELAB_MCP_REFERENCE.md`
+2. Or regenerate: `python3 scripts/generate-mcp-docs.py > ~/cc-share/tools/api-reference/MCP_TOOLS_AUTO.md`
+3. Update this section's tool count if significantly changed
+
+**Extension:** To add new MCP tools, extend `homelab_server.py` - do NOT create new servers.
 
 ### Home Assistant MCP Tools
 
@@ -362,6 +371,37 @@ http://10.0.1.210:8000/api/v1
 - `/check-messages` - Check for pending messages from other agents
 - Create tasks via API (see Task/Sprint Guide in cc-share)
 - Send messages via API (see API Reference in cc-share)
+
+### Message Handling Protocol (MANDATORY)
+
+**All agents MUST follow this protocol for inter-agent messaging:**
+
+1. **On Receive:** Mark message as READ using `ccpm_mark_message_read()` or via API
+2. **On Completion:** Mark message COMPLETE with response attached using `ccpm_mark_message_complete(message_id, response="your response")`
+3. **DO NOT send separate reply messages** - use the response field on the original message
+4. **Sender Auto-Notification:** When you complete a message with a response, the MCP server automatically sends a `[Response]` notification to the original sender
+5. **Response Messages:** When you receive a `[Response]` type message, acknowledge and complete it after reading
+
+**MCP Tools for Message Lifecycle:**
+| Tool | Purpose |
+|------|---------|
+| `ccpm_check_inbox()` | Fetch messages (auto-marks delivered, auto-completes info) |
+| `ccpm_mark_message_read()` | Mark as read |
+| `ccpm_mark_message_complete(id, response)` | Mark complete + auto-notify sender |
+| `ccpm_acknowledge_and_complete(id, response)` | Combined read + complete + auto-notify |
+
+**Message Flow:**
+```
+Sender → Message → Recipient
+                      ↓
+              READ message
+                      ↓
+              Do work...
+                      ↓
+              COMPLETE with response
+                      ↓
+              [Auto] Sender gets notification
+```
 
 ### Message the Director (Human)
 ```bash

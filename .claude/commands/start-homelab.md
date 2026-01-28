@@ -94,23 +94,7 @@ gh issue list --repo unmanned-systems-uk/homelab --state open --limit 10
 
 ---
 
-## STEP 5: Equipment Quick Check
-
-Verify SCPI equipment connectivity:
-
-```bash
-echo ""
-echo "=== SCPI Equipment ==="
-for addr in "101:5025" "105:5555" "106:5555" "111:5025" "120:5555" "138:5025"; do
-  ip="10.0.1.${addr%:*}"
-  port="${addr#*:}"
-  timeout 1 bash -c "echo > /dev/tcp/$ip/$port" 2>/dev/null && echo "$ip: UP" || echo "$ip: DOWN"
-done
-```
-
----
-
-## STEP 6: Network Quick Check
+## STEP 5: Network Quick Check
 
 ```bash
 echo ""
@@ -124,7 +108,7 @@ done
 
 ---
 
-## STEP 7: Create/Update Today's Session
+## STEP 6: Create/Update Today's Session
 
 Initialize or continue today's session in database:
 
@@ -170,7 +154,7 @@ fi
 
 ---
 
-## STEP 8: Report Ready
+## STEP 7: Report Ready
 
 Present status to user:
 
@@ -191,9 +175,6 @@ Present status to user:
 
 ## GitHub Issues
 [X open issues - list titles]
-
-## Equipment Status
-[X/6 SCPI devices online]
 
 ## Key Network
 - UDM Pro (10.0.1.1): [UP/DOWN]
