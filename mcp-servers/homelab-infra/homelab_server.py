@@ -841,18 +841,135 @@ def ccpm_send_message(
         }
 
 
+# Broadcast UUID constant
+BROADCAST_UUID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+
 @mcp.tool()
-def ccpm_check_inbox(agent_id: str = None, include_read: bool = False) -> list[dict]:
+def ccpm_broadcast_message(
+    subject: str,
+    body: str,
+    message_type: str = "info",
+    priority: str = "normal",
+    exclude_self: bool = True
+) -> dict:
     """
-    Check inbox for pending messages.
+    Broadcast a message to ALL registered agents. Fans out to each agent individually.
+    Use for announcements, protocol changes, system updates.
+
+    Args:
+        subject: Message subject
+        body: Message body
+        message_type: Type of message (info, alert, etc.) - default: info
+        priority: Message priority (low, normal, high) - default: normal
+        exclude_self: Don't send to self (default: True)
+
+    Returns:
+        Dict with success status, count of messages sent, and any failures
+    """
+    result = {
+        "success": False,
+        "broadcast_id": BROADCAST_UUID,
+        "total_agents": 0,
+        "sent_count": 0,
+        "failed_count": 0,
+        "sent_to": [],
+        "failed": []
+    }
+
+    # Get sender ID
+    sender_id = os.environ.get("CCPM_AGENT_ID")
+    if not sender_id:
+        return {
+            "success": False,
+            "error": "CCPM_AGENT_ID not set",
+            "error_code": "MISSING_SENDER_ID"
+        }
+
+    try:
+        # Get all agents
+        agents_response = httpx.get(f"{CCPM_MESSAGING_API}/agents", timeout=10.0)
+        agents_response.raise_for_status()
+        agents = agents_response.json()
+
+        result["total_agents"] = len(agents)
+
+        # Send to each agent
+        for agent in agents:
+            agent_id = agent.get("id")
+            agent_name = agent.get("name", "Unknown")
+
+            # Skip self if requested
+            if exclude_self and agent_id == sender_id:
+                continue
+
+            try:
+                payload = {
+                    "to_agent_id": agent_id,
+                    "message_type": message_type,
+                    "subject": subject,
+                    "body": body,
+                    "priority": priority
+                }
+
+                msg_response = httpx.post(
+                    f"{CCPM_MESSAGING_API}/agent-messages?from_agent_id={sender_id}",
+                    json=payload,
+                    timeout=5.0
+                )
+                msg_response.raise_for_status()
+                result["sent_count"] += 1
+                result["sent_to"].append(agent_name)
+
+            except Exception as e:
+                result["failed_count"] += 1
+                result["failed"].append({"agent": agent_name, "error": str(e)})
+
+        result["success"] = result["sent_count"] > 0
+        return result
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"Failed to fetch agents: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_check_inbox(
+    agent_id: str = None,
+    include_read: bool = False,
+    auto_deliver: bool = True,
+    auto_complete_info: bool = True
+) -> dict:
+    """
+    Check inbox for pending messages. By default, auto-marks messages as delivered
+    and auto-completes info/broadcast messages.
 
     Args:
         agent_id: Agent UUID (defaults to env CCPM_AGENT_ID)
         include_read: Whether to include read messages
+        auto_deliver: Auto-mark fetched messages as delivered (default: True)
+        auto_complete_info: Auto-complete 'info' type messages after fetch (default: True)
 
     Returns:
-        List of messages
+        Dict with messages list and lifecycle actions taken
     """
+    result = {
+        "success": True,
+        "messages": [],
+        "delivered_count": 0,
+        "auto_completed_count": 0,
+        "auto_completed_ids": []
+    }
+
     try:
         # Get agent ID
         target_agent_id = agent_id or os.environ.get("CCPM_AGENT_ID")
@@ -876,9 +993,48 @@ def ccpm_check_inbox(agent_id: str = None, include_read: bool = False) -> list[d
         data = response.json()
 
         # Handle paginated response
-        if isinstance(data, dict) and "items" in data:
-            return data["items"]
-        return data
+        messages = data["items"] if isinstance(data, dict) and "items" in data else data
+        result["messages"] = messages
+
+        # Auto-mark as delivered
+        if auto_deliver and messages:
+            for msg in messages:
+                msg_id = msg.get("id")
+                if msg_id and msg.get("status") == "pending":
+                    try:
+                        httpx.post(
+                            f"{CCPM_MESSAGING_API}/agent-messages/{msg_id}/delivered",
+                            timeout=5.0
+                        )
+                        result["delivered_count"] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to mark message {msg_id} as delivered: {e}")
+
+        # Auto-complete info messages
+        if auto_complete_info and messages:
+            for msg in messages:
+                msg_id = msg.get("id")
+                msg_type = msg.get("message_type")
+                # Auto-complete info and broadcast messages
+                if msg_id and msg_type == "info":
+                    try:
+                        # First mark read
+                        httpx.post(
+                            f"{CCPM_MESSAGING_API}/agent-messages/{msg_id}/read",
+                            timeout=5.0
+                        )
+                        # Then mark complete
+                        httpx.post(
+                            f"{CCPM_MESSAGING_API}/agent-messages/{msg_id}/complete",
+                            json={"response": "Auto-acknowledged info message"},
+                            timeout=5.0
+                        )
+                        result["auto_completed_count"] += 1
+                        result["auto_completed_ids"].append(msg_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to auto-complete info message {msg_id}: {e}")
+
+        return result
 
     except httpx.HTTPStatusError as e:
         return {
@@ -895,25 +1051,19 @@ def ccpm_check_inbox(agent_id: str = None, include_read: bool = False) -> list[d
 
 
 @mcp.tool()
-def ccpm_mark_message_complete(message_id: str, response: str = None) -> dict:
+def ccpm_mark_message_read(message_id: str) -> dict:
     """
-    Mark a message as complete, optionally with a response.
+    Mark a message as read.
 
     Args:
         message_id: Message UUID
-        response: Optional response text
 
     Returns:
         Success response or error
     """
     try:
-        payload = {}
-        if response:
-            payload["response"] = response
-
         response_obj = httpx.post(
-            f"{CCPM_MESSAGING_API}/agent-messages/{message_id}/complete",
-            json=payload,
+            f"{CCPM_MESSAGING_API}/agent-messages/{message_id}/read",
             timeout=10.0
         )
         response_obj.raise_for_status()
@@ -931,6 +1081,214 @@ def ccpm_mark_message_complete(message_id: str, response: str = None) -> dict:
             "error": str(e),
             "error_code": "REQUEST_FAILED"
         }
+
+
+@mcp.tool()
+def ccpm_mark_message_complete(
+    message_id: str,
+    response: str = None,
+    auto_notify_sender: bool = True
+) -> dict:
+    """
+    Mark a message as complete, optionally with a response.
+    When a response is provided, automatically notifies the original sender.
+
+    Args:
+        message_id: Message UUID
+        response: Optional response text
+        auto_notify_sender: Send notification to original sender when response provided (default: True)
+
+    Returns:
+        Success response including notification status if response was sent
+    """
+    result = {
+        "message_id": message_id,
+        "completed": False,
+        "notification_sent": False,
+        "success": False
+    }
+
+    try:
+        # Step 1: Get original message to find sender (only if we need to notify)
+        original_msg = None
+        if response and auto_notify_sender:
+            try:
+                msg_response = httpx.get(
+                    f"{CCPM_MESSAGING_API}/agent-messages/{message_id}",
+                    timeout=10.0
+                )
+                msg_response.raise_for_status()
+                original_msg = msg_response.json()
+            except Exception as e:
+                logger.warning(f"Failed to fetch original message for notification: {e}")
+
+        # Step 2: Mark message as complete
+        payload = {}
+        if response:
+            payload["response"] = response
+
+        complete_response = httpx.post(
+            f"{CCPM_MESSAGING_API}/agent-messages/{message_id}/complete",
+            json=payload,
+            timeout=10.0
+        )
+        complete_response.raise_for_status()
+        completed_msg = complete_response.json()
+        result["completed"] = True
+        result["message"] = completed_msg
+
+        # Step 3: Auto-notify sender if response was provided
+        if response and auto_notify_sender and original_msg:
+            sender_id = original_msg.get("from_agent_id")
+            sender_name = original_msg.get("sender_name", "Unknown")
+            recipient_name = original_msg.get("recipient_name", "Agent")
+            subject = original_msg.get("subject", "No subject")
+
+            # Get our agent ID
+            our_agent_id = CCPM_AGENT_ID
+
+            if sender_id and our_agent_id and sender_id != our_agent_id:
+                try:
+                    # Truncate response for notification (first 200 chars)
+                    response_preview = response[:200] + "..." if len(response) > 200 else response
+
+                    notify_payload = {
+                        "to_agent_id": sender_id,
+                        "message_type": "response",
+                        "subject": f"[Response] {subject}",
+                        "body": f"{recipient_name} has responded to your message.\n\nOriginal: {subject}\n\nResponse:\n{response_preview}\n\n---\nView full response on message ID: {message_id}",
+                        "priority": "normal",
+                        "context": {"original_message_id": message_id}
+                    }
+
+                    notify_response = httpx.post(
+                        f"{CCPM_MESSAGING_API}/agent-messages?from_agent_id={our_agent_id}",
+                        json=notify_payload,
+                        timeout=10.0
+                    )
+                    notify_response.raise_for_status()
+                    result["notification_sent"] = True
+                    result["notification_to"] = sender_name
+                except Exception as e:
+                    logger.warning(f"Failed to send auto-notification: {e}")
+                    result["notification_error"] = str(e)
+
+        result["success"] = result["completed"]
+        return result
+
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_acknowledge_and_complete(
+    message_id: str,
+    response: str = None,
+    auto_notify_sender: bool = True
+) -> dict:
+    """
+    Mark a message as read AND complete in one call. Convenience helper.
+    When a response is provided, automatically notifies the original sender.
+
+    Args:
+        message_id: Message UUID
+        response: Optional response text
+        auto_notify_sender: Send notification to original sender when response provided (default: True)
+
+    Returns:
+        Success response with both operations status and notification info
+    """
+    results = {
+        "message_id": message_id,
+        "read": False,
+        "completed": False,
+        "notification_sent": False,
+        "success": False
+    }
+
+    # Step 0: Get original message for notification (if needed)
+    original_msg = None
+    if response and auto_notify_sender:
+        try:
+            msg_response = httpx.get(
+                f"{CCPM_MESSAGING_API}/agent-messages/{message_id}",
+                timeout=10.0
+            )
+            msg_response.raise_for_status()
+            original_msg = msg_response.json()
+        except Exception as e:
+            logger.warning(f"Failed to fetch original message for notification: {e}")
+
+    # Step 1: Mark as read
+    try:
+        read_response = httpx.post(
+            f"{CCPM_MESSAGING_API}/agent-messages/{message_id}/read",
+            timeout=10.0
+        )
+        read_response.raise_for_status()
+        results["read"] = True
+    except Exception as e:
+        results["read_error"] = str(e)
+
+    # Step 2: Mark as complete
+    try:
+        payload = {}
+        if response:
+            payload["response"] = response
+
+        complete_response = httpx.post(
+            f"{CCPM_MESSAGING_API}/agent-messages/{message_id}/complete",
+            json=payload,
+            timeout=10.0
+        )
+        complete_response.raise_for_status()
+        results["completed"] = True
+    except Exception as e:
+        results["complete_error"] = str(e)
+
+    # Step 3: Auto-notify sender if response was provided
+    if response and auto_notify_sender and original_msg and results["completed"]:
+        sender_id = original_msg.get("from_agent_id")
+        sender_name = original_msg.get("sender_name", "Unknown")
+        recipient_name = original_msg.get("recipient_name", "Agent")
+        subject = original_msg.get("subject", "No subject")
+        our_agent_id = CCPM_AGENT_ID
+
+        if sender_id and our_agent_id and sender_id != our_agent_id:
+            try:
+                response_preview = response[:200] + "..." if len(response) > 200 else response
+                notify_payload = {
+                    "to_agent_id": sender_id,
+                    "message_type": "response",
+                    "subject": f"[Response] {subject}",
+                    "body": f"{recipient_name} has responded to your message.\n\nOriginal: {subject}\n\nResponse:\n{response_preview}\n\n---\nView full response on message ID: {message_id}",
+                    "priority": "normal",
+                    "context": {"original_message_id": message_id}
+                }
+                notify_response = httpx.post(
+                    f"{CCPM_MESSAGING_API}/agent-messages?from_agent_id={our_agent_id}",
+                    json=notify_payload,
+                    timeout=10.0
+                )
+                notify_response.raise_for_status()
+                results["notification_sent"] = True
+                results["notification_to"] = sender_name
+            except Exception as e:
+                logger.warning(f"Failed to send auto-notification: {e}")
+                results["notification_error"] = str(e)
+
+    results["success"] = results["read"] and results["completed"]
+    return results
 
 
 # ==================== Task Management Tools ====================
@@ -1837,6 +2195,485 @@ def ccpm_signal_completion(
     )
 
     return results
+
+
+# ==================== Lessons Learned System ====================
+
+# Lessons API endpoints use the same base URL as messaging
+# Base: http://10.0.1.210:8000/api/v1/lessons
+
+@mcp.tool()
+def ccpm_list_lessons(
+    severity: str = None,
+    tags: str = None,
+    category: str = None
+) -> dict:
+    """
+    List lessons from the CCPM Lessons Learned system.
+
+    Args:
+        severity: Filter by severity (comma-separated: critical,high,medium,low)
+        tags: Filter by tags (comma-separated)
+        category: Filter by category (solution, principle, error, pattern)
+
+    Returns:
+        List of lessons with their details
+    """
+    try:
+        params = {}
+        if severity:
+            params["severity"] = severity
+        if tags:
+            params["tags"] = tags
+        if category:
+            params["category"] = category
+
+        response = httpx.get(
+            f"{CCPM_MESSAGING_API}/lessons",
+            params=params,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        # Handle both list and paginated response formats
+        lessons = data if isinstance(data, list) else data.get("items", data.get("lessons", []))
+
+        return {
+            "success": True,
+            "count": len(lessons),
+            "lessons": lessons
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_get_lesson(lesson_id: str) -> dict:
+    """
+    Get detailed information about a specific lesson.
+
+    Args:
+        lesson_id: UUID of the lesson to retrieve
+
+    Returns:
+        Lesson details including title, description, category, severity, tags
+    """
+    try:
+        response = httpx.get(
+            f"{CCPM_MESSAGING_API}/lessons/{lesson_id}",
+            timeout=10.0
+        )
+        response.raise_for_status()
+        lesson = response.json()
+
+        return {
+            "success": True,
+            "lesson": lesson
+        }
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {
+                "success": False,
+                "error": f"Lesson {lesson_id} not found",
+                "error_code": "NOT_FOUND"
+            }
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_create_lesson(
+    title: str,
+    description: str,
+    category: str,
+    severity: str,
+    tags: list[str] = None,
+    source_type: str = "agent"
+) -> dict:
+    """
+    Create a new lesson in the CCPM Lessons Learned system.
+
+    Args:
+        title: Brief descriptive title
+        description: Detailed explanation with examples (include BAD and GOOD patterns)
+        category: One of: solution, principle, error, pattern
+        severity: One of: critical, high, medium, low
+        tags: List of relevant tags for searchability
+        source_type: Source type (default: agent)
+
+    Returns:
+        Created lesson with ID
+    """
+    # Validate category
+    valid_categories = ["solution", "principle", "error", "pattern"]
+    if category not in valid_categories:
+        return {
+            "success": False,
+            "error": f"Invalid category. Must be one of: {', '.join(valid_categories)}",
+            "error_code": "VALIDATION_ERROR"
+        }
+
+    # Validate severity
+    valid_severities = ["critical", "high", "medium", "low"]
+    if severity not in valid_severities:
+        return {
+            "success": False,
+            "error": f"Invalid severity. Must be one of: {', '.join(valid_severities)}",
+            "error_code": "VALIDATION_ERROR"
+        }
+
+    try:
+        payload = {
+            "title": title,
+            "description": description,
+            "category": category,
+            "severity": severity,
+            "source_type": source_type
+        }
+        if tags:
+            payload["tags"] = tags
+
+        response = httpx.post(
+            f"{CCPM_MESSAGING_API}/lessons",
+            json=payload,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        lesson = response.json()
+
+        return {
+            "success": True,
+            "lesson_id": lesson.get("id"),
+            "lesson": lesson,
+            "message": "Lesson created. Use ccpm_generate_lesson_statuses to notify all agents."
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "details": e.response.text if hasattr(e.response, 'text') else None,
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_get_my_lesson_status(
+    agent_id: str = None,
+    status: str = None
+) -> dict:
+    """
+    Get lesson statuses for an agent. Shows which lessons are pending/acknowledged/implemented.
+
+    Args:
+        agent_id: Agent UUID (defaults to CCPM_AGENT_ID from environment)
+        status: Filter by status (pending, acknowledged, implemented, rejected, not_applicable)
+
+    Returns:
+        List of agent-lesson status records
+    """
+    aid = agent_id or CCPM_AGENT_ID
+    if aid == "unknown":
+        return {
+            "success": False,
+            "error": "Agent ID not configured. Set CCPM_AGENT_ID or provide agent_id parameter.",
+            "error_code": "CONFIG_ERROR"
+        }
+
+    try:
+        params = {"agent_id": aid}
+        if status:
+            params["status"] = status
+
+        response = httpx.get(
+            f"{CCPM_MESSAGING_API}/agent-lesson-status",
+            params=params,
+            timeout=10.0
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        # Handle both list and paginated response formats
+        statuses = data if isinstance(data, list) else data.get("items", data.get("statuses", []))
+
+        return {
+            "success": True,
+            "agent_id": aid,
+            "count": len(statuses),
+            "statuses": statuses
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_acknowledge_lesson(
+    lesson_id: str,
+    agent_id: str = None,
+    notes: str = None
+) -> dict:
+    """
+    Acknowledge a lesson (mark as read and understood).
+
+    Args:
+        lesson_id: UUID of the lesson to acknowledge
+        agent_id: Agent UUID (defaults to CCPM_AGENT_ID)
+        notes: Optional notes about acknowledgment
+
+    Returns:
+        Updated or created status record
+    """
+    aid = agent_id or CCPM_AGENT_ID
+    if aid == "unknown":
+        return {
+            "success": False,
+            "error": "Agent ID not configured. Set CCPM_AGENT_ID or provide agent_id parameter.",
+            "error_code": "CONFIG_ERROR"
+        }
+
+    try:
+        # First check if status record exists
+        check_response = httpx.get(
+            f"{CCPM_MESSAGING_API}/agent-lesson-status",
+            params={"agent_id": aid, "lesson_id": lesson_id},
+            timeout=10.0
+        )
+        check_response.raise_for_status()
+        check_data = check_response.json()
+        existing = check_data if isinstance(check_data, list) else check_data.get("items", [])
+
+        if existing and len(existing) > 0:
+            # Update existing record
+            status_id = existing[0].get("id")
+            payload = {"status": "acknowledged"}
+            if notes:
+                payload["notes"] = notes
+
+            response = httpx.put(
+                f"{CCPM_MESSAGING_API}/agent-lesson-status/{status_id}",
+                json=payload,
+                timeout=10.0
+            )
+            response.raise_for_status()
+            result = response.json()
+            return {
+                "success": True,
+                "action": "updated",
+                "status_id": status_id,
+                "status": result
+            }
+        else:
+            # Create new record
+            payload = {
+                "agent_id": aid,
+                "lesson_id": lesson_id,
+                "status": "acknowledged"
+            }
+            if notes:
+                payload["notes"] = notes
+
+            response = httpx.post(
+                f"{CCPM_MESSAGING_API}/agent-lesson-status",
+                json=payload,
+                timeout=10.0
+            )
+            response.raise_for_status()
+            result = response.json()
+            return {
+                "success": True,
+                "action": "created",
+                "status_id": result.get("id"),
+                "status": result
+            }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "details": e.response.text if hasattr(e.response, 'text') else None,
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_implement_lesson(
+    lesson_id: str,
+    agent_id: str = None,
+    notes: str = None
+) -> dict:
+    """
+    Mark a lesson as implemented (applied to work).
+
+    Args:
+        lesson_id: UUID of the lesson that was implemented
+        agent_id: Agent UUID (defaults to CCPM_AGENT_ID)
+        notes: Notes about how the lesson was applied
+
+    Returns:
+        Updated status record
+    """
+    aid = agent_id or CCPM_AGENT_ID
+    if aid == "unknown":
+        return {
+            "success": False,
+            "error": "Agent ID not configured. Set CCPM_AGENT_ID or provide agent_id parameter.",
+            "error_code": "CONFIG_ERROR"
+        }
+
+    try:
+        # Find existing status record
+        check_response = httpx.get(
+            f"{CCPM_MESSAGING_API}/agent-lesson-status",
+            params={"agent_id": aid, "lesson_id": lesson_id},
+            timeout=10.0
+        )
+        check_response.raise_for_status()
+        check_data = check_response.json()
+        existing = check_data if isinstance(check_data, list) else check_data.get("items", [])
+
+        if existing and len(existing) > 0:
+            # Update existing record
+            status_id = existing[0].get("id")
+            payload = {"status": "implemented"}
+            if notes:
+                payload["notes"] = notes
+
+            response = httpx.put(
+                f"{CCPM_MESSAGING_API}/agent-lesson-status/{status_id}",
+                json=payload,
+                timeout=10.0
+            )
+            response.raise_for_status()
+            result = response.json()
+            return {
+                "success": True,
+                "action": "updated",
+                "status_id": status_id,
+                "status": result
+            }
+        else:
+            # Create new record with implemented status
+            payload = {
+                "agent_id": aid,
+                "lesson_id": lesson_id,
+                "status": "implemented"
+            }
+            if notes:
+                payload["notes"] = notes
+
+            response = httpx.post(
+                f"{CCPM_MESSAGING_API}/agent-lesson-status",
+                json=payload,
+                timeout=10.0
+            )
+            response.raise_for_status()
+            result = response.json()
+            return {
+                "success": True,
+                "action": "created",
+                "status_id": result.get("id"),
+                "status": result
+            }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "details": e.response.text if hasattr(e.response, 'text') else None,
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_generate_lesson_statuses(lesson_id: str) -> dict:
+    """
+    Generate pending status records for all active agents for a new lesson.
+    Call this after creating a new lesson to notify all agents.
+
+    Args:
+        lesson_id: UUID of the lesson to generate statuses for
+
+    Returns:
+        Number of status records created
+    """
+    try:
+        response = httpx.post(
+            f"{CCPM_MESSAGING_API}/agent-lesson-status/generate/lesson/{lesson_id}",
+            timeout=10.0
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        return {
+            "success": True,
+            "lesson_id": lesson_id,
+            "result": result,
+            "message": "Pending status records created for all active agents"
+        }
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {
+                "success": False,
+                "error": f"Lesson {lesson_id} not found",
+                "error_code": "NOT_FOUND"
+            }
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "details": e.response.text if hasattr(e.response, 'text') else None,
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
 
 
 # ==================== Run Server ====================
