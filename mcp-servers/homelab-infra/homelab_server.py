@@ -756,6 +756,182 @@ def ccpm_list_agents(status: str = None, agent_type: str = None) -> list[dict]:
 
 
 @mcp.tool()
+def ccpm_find_agent(
+    name: str = None,
+    agent_type: str = None,
+    project: str = None,
+    keyword: str = None
+) -> dict:
+    """
+    Find agents by name, type, project, or keyword search. Use this instead of AGENT-REGISTRY.md.
+
+    Args:
+        name: Partial name match (case-insensitive, e.g., "Frontend" matches "V2-Frontend")
+        agent_type: Filter by type (orchestrator, backend, frontend, infrastructure, testing, etc.)
+        project: Filter by project name (partial match: "CCPM", "HomeLab", "HomeGate", "NEX")
+        keyword: Search in agent description (e.g., "Svelte", "FastAPI", "UniFi")
+
+    Returns:
+        List of matching agents with id, name, type, project, description
+
+    Examples:
+        ccpm_find_agent(agent_type="frontend")  # All frontend agents
+        ccpm_find_agent(project="CCPM", agent_type="backend")  # CCPM backend agent
+        ccpm_find_agent(keyword="orchestrat")  # All orchestrators
+        ccpm_find_agent(name="Master")  # All master/orchestrator agents
+    """
+    try:
+        # Get all agents
+        response = httpx.get(f"{CCPM_MESSAGING_API}/agents", timeout=10.0)
+        response.raise_for_status()
+        all_agents = response.json()
+
+        # Get projects for enrichment
+        try:
+            proj_response = httpx.get(f"{CCPM_MESSAGING_API}/projects", timeout=5.0)
+            proj_response.raise_for_status()
+            projects = {p["id"]: p["name"] for p in proj_response.json()}
+        except:
+            projects = {}
+
+        # Filter agents
+        results = []
+        for agent in all_agents:
+            # Skip inactive agents
+            if not agent.get("is_active", True):
+                continue
+
+            agent_name = agent.get("name", "")
+            agent_type_val = agent.get("agent_type", "")
+            agent_desc = agent.get("description", "") or ""
+            agent_project_id = agent.get("project_id")
+            agent_project_name = projects.get(agent_project_id, "Unknown")
+
+            # Apply filters
+            if name and name.lower() not in agent_name.lower():
+                continue
+            if agent_type and agent_type.lower() != agent_type_val.lower():
+                continue
+            if project and project.lower() not in agent_project_name.lower():
+                continue
+            if keyword and keyword.lower() not in agent_desc.lower() and keyword.lower() not in agent_name.lower():
+                continue
+
+            results.append({
+                "id": agent.get("id"),
+                "name": agent_name,
+                "type": agent_type_val,
+                "project": agent_project_name,
+                "description": agent_desc,
+                "status": agent.get("status", "unknown")
+            })
+
+        return {
+            "success": True,
+            "count": len(results),
+            "agents": results,
+            "hint": "Use the 'id' field as to_agent in ccpm_send_message()"
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
+def ccpm_get_agent_details(agent: str) -> dict:
+    """
+    Get detailed information about a specific agent by name or UUID.
+
+    Args:
+        agent: Agent name (e.g., "V2-Frontend") or UUID
+
+    Returns:
+        Full agent details including project, description, config, status
+
+    Use this to get the UUID for an agent you know by name.
+    """
+    try:
+        # Get all agents and find match
+        response = httpx.get(f"{CCPM_MESSAGING_API}/agents", timeout=10.0)
+        response.raise_for_status()
+        all_agents = response.json()
+
+        # Find agent by name or UUID
+        target = None
+        agent_lower = agent.lower()
+        for a in all_agents:
+            if a.get("id") == agent or a.get("name", "").lower() == agent_lower:
+                target = a
+                break
+
+        if not target:
+            # Try partial match
+            for a in all_agents:
+                if agent_lower in a.get("name", "").lower():
+                    target = a
+                    break
+
+        if not target:
+            return {
+                "success": False,
+                "error": f"Agent '{agent}' not found",
+                "error_code": "NOT_FOUND",
+                "hint": "Use ccpm_find_agent() to search for agents"
+            }
+
+        # Get project name
+        project_name = "Unknown"
+        if target.get("project_id"):
+            try:
+                proj_response = httpx.get(
+                    f"{CCPM_MESSAGING_API}/projects/{target['project_id']}",
+                    timeout=5.0
+                )
+                if proj_response.status_code == 200:
+                    project_name = proj_response.json().get("name", "Unknown")
+            except:
+                pass
+
+        return {
+            "success": True,
+            "agent": {
+                "id": target.get("id"),
+                "name": target.get("name"),
+                "type": target.get("agent_type"),
+                "description": target.get("description"),
+                "project": project_name,
+                "project_id": target.get("project_id"),
+                "status": target.get("status"),
+                "is_active": target.get("is_active"),
+                "config": target.get("config"),
+                "created_at": target.get("created_at")
+            },
+            "usage": f"ccpm_send_message(to_agent=\"{target.get('id')}\", subject=\"...\", body=\"...\")"
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "success": False,
+            "error": f"API error: {e.response.status_code}",
+            "error_code": "API_ERROR"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": "REQUEST_FAILED"
+        }
+
+
+@mcp.tool()
 def ccpm_send_message(
     to_agent: str,
     subject: str,
