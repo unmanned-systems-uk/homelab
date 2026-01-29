@@ -1591,7 +1591,18 @@ def ccpm_update_task_status(
             timeout=10.0
         )
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+
+        # Add reminder to signal MASTER when task moves to testing/review
+        if status in ["testing", "review"]:
+            result["action_required"] = {
+                "reminder": "Signal MASTER of task completion",
+                "command": f'signal-completion.sh "<YOUR-AGENT-TAG>" "Task {task_id}: <brief description>"',
+                "location": "~/cc-share/tools/scripts/signal-completion.sh",
+                "note": "Run this command locally to notify MASTER via tmux"
+            }
+
+        return result
 
     except httpx.HTTPStatusError as e:
         return {
