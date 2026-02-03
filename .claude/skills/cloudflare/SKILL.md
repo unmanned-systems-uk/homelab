@@ -14,6 +14,9 @@
 |--------|--------|------------|-----------|
 | **homegate** | HEALTHY | https://homegate.unmanned-systems.uk | http://nginx:80 (Docker) |
 | **unifi-mcp** | HEALTHY | https://mcp.unmanned-systems.uk | http://10.0.1.202:3001 |
+| **unifi-mcp** | HEALTHY | https://homelab-mcp.unmanned-systems.uk | http://10.0.1.202:8080 |
+| **unifi-mcp** | HEALTHY | https://github-mcp.unmanned-systems.uk | http://10.0.1.202:8082 |
+| **unifi-mcp** | HEALTHY | https://ccpm-mcp.unmanned-systems.uk | http://10.0.1.202:9000 |
 | **homeassist** | PENDING | https://homeassist.unmanned-systems.uk | http://10.0.1.150:8123 |
 
 ### Tunnel IDs
