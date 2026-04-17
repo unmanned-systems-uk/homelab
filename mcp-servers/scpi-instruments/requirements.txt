@@ -1,0 +1,9 @@
+# SCPI Instruments MCP Server Dependencies
+
+# MCP Framework
+fastmcp>=2.0.0
+
+# Numeric operations for trace data
+numpy>=1.24.0
+
+# No other external dependencies - uses standard library socket
