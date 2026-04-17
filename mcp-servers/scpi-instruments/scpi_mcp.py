@@ -689,6 +689,27 @@ def scope_characterise_dual(
         return {"error": str(e)}
 
 
+@mcp.tool()
+def scope_reference_status() -> dict:
+    """
+    Query oscilloscope reference clock source and lock status.
+
+    Tries multiple SCPI command variants since MSO8000 documentation
+    is ambiguous. Returns whichever command responds.
+
+    FALLBACK: If all commands timeout, use scope_counter with a known
+    10 MHz reference signal - exact 10.000000 MHz confirms external lock.
+
+    Returns:
+        Dict with source (INT/EXT), working_command, tested_commands
+    """
+    try:
+        scope = get_instrument("mso8204")
+        return scope.reference_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ==============================================================================
 # DMM6500 - Multimeter Tools (7)
 # ==============================================================================

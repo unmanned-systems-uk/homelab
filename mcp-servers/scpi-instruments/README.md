@@ -14,7 +14,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | PSU-1 | Rigol DP932A | 10.0.1.111 | 5025 | Triple output power supply |
 | PSU-2 | Rigol DP932A | 10.0.1.138 | 5025 | Triple output power supply |
 
-## MCP Tools (59 total)
+## MCP Tools (60 total)
 
 ### Connection Management (3)
 
@@ -42,7 +42,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | `rsa_capture_burst` | Capture N consecutive sweeps |
 | `rsa_screenshot` | Capture display (BMP) |
 
-### MSO8204 - Oscilloscope (14)
+### MSO8204 - Oscilloscope (15)
 
 | Tool | Description |
 |------|-------------|
@@ -60,6 +60,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | `scope_counter` | Hardware frequency counter (accurate) |
 | `scope_characterise_channel` | Full signal characterisation |
 | `scope_characterise_dual` | Dual channel + phase measurement |
+| `scope_reference_status` | Query reference clock source (INT/EXT) |
 
 ### DMM6500 - Multimeter (7)
 

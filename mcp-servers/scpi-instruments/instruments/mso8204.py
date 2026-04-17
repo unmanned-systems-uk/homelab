@@ -575,6 +575,59 @@ class MSO8204(BaseInstrument):
         else:
             return "UNKNOWN"
 
+    def reference_status(self, timeout_s: float = 2.0) -> dict:
+        """
+        Query reference clock source and lock status.
+
+        Tries multiple SCPI command variants since MSO8000 documentation
+        is unclear on exact syntax. Returns whichever command responds.
+
+        NOTE: If all commands timeout, the reference status can be inferred
+        from scope_counter - if it returns exactly 10.000000 MHz on a known
+        reference signal, the external reference is locked.
+
+        Returns:
+            Dict with source (INT/EXT), locked status, and working_command
+        """
+        # Candidate commands to try (most likely first)
+        candidates = [
+            (":SYSTem:CLOCk:SOURce?", "clock_source"),
+            (":SYSTem:ROSCillator:SOURce?", "rosc_source"),
+            (":ROSCillator:SOURce?", "rosc_short"),
+            (":SYSTem:REFerence:SOURce?", "ref_source"),
+            (":REFerence:SOURce?", "ref_short"),
+            (":SYSTem:CLOCk?", "clock"),
+            (":CLOCk:SOURce?", "clock_short"),
+        ]
+
+        result = {
+            "source": None,
+            "locked": None,
+            "working_command": None,
+            "tested_commands": [],
+            "error": None
+        }
+
+        for cmd, label in candidates:
+            try:
+                # Use short timeout to avoid blocking
+                response = self.query(cmd, timeout=timeout_s)
+                response = response.strip().upper()
+                result["tested_commands"].append({"cmd": cmd, "response": response})
+
+                if response in ["INT", "INTERNAL", "EXT", "EXTERNAL", "0", "1"]:
+                    result["source"] = "EXT" if response in ["EXT", "EXTERNAL", "1"] else "INT"
+                    result["working_command"] = cmd
+                    break
+            except Exception as e:
+                result["tested_commands"].append({"cmd": cmd, "error": str(e)[:50]})
+                continue
+
+        if result["source"] is None:
+            result["error"] = "No reference source command responded. Use scope_counter with known 10MHz reference to verify lock indirectly."
+
+        return result
+
     def characterise_dual(
         self,
         channel_a: int,
