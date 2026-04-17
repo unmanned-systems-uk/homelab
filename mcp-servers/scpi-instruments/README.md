@@ -156,14 +156,27 @@ python scpi_mcp.py
 
 ### MCP Configuration
 
-Add to `.mcp.json`:
+Add to `.mcp.json` (local network):
 
 ```json
 {
   "mcpServers": {
     "scpi-instruments": {
-      "type": "sse",
-      "url": "http://10.0.1.202:8081/sse"
+      "type": "streamable-http",
+      "url": "http://10.0.1.202:8081/mcp"
+    }
+  }
+}
+```
+
+Via Cloudflare Tunnel (external):
+
+```json
+{
+  "mcpServers": {
+    "scpi-instruments": {
+      "type": "streamable-http",
+      "url": "https://scpi-mcp.unmanned-systems.uk/mcp"
     }
   }
 }

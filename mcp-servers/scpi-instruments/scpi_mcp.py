@@ -11,7 +11,7 @@ Provides MCP tool access to SCPI-enabled test equipment:
 - DP932A Programmable DC Power Supply (x2)
 
 Transport: Raw TCP socket (not VISA/VXI-11)
-Protocol: SSE for MCP communication
+Protocol: Streamable HTTP for MCP communication (/mcp endpoint)
 """
 
 import os
@@ -1444,4 +1444,4 @@ if __name__ == "__main__":
     for name, config in INSTRUMENTS.items():
         logger.info("  %s: %s:%d", name, config.ip, config.port)
     logger.info("Listening on port %d", port)
-    mcp.run(transport="sse", port=port, host="0.0.0.0")
+    mcp.run(transport="streamable-http", port=port, host="0.0.0.0")
