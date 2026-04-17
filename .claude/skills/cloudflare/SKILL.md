@@ -17,6 +17,7 @@
 | **unifi-mcp** | HEALTHY | https://homelab-mcp.unmanned-systems.uk | http://10.0.1.202:8080 |
 | **unifi-mcp** | HEALTHY | https://github-mcp.unmanned-systems.uk | http://10.0.1.202:8082 |
 | **unifi-mcp** | HEALTHY | https://ccpm-mcp.unmanned-systems.uk | http://10.0.1.202:9000 |
+| **unifi-mcp** | HEALTHY | https://scpi-mcp.unmanned-systems.uk | http://10.0.1.202:8081 |
 | **homeassist** | PENDING | https://homeassist.unmanned-systems.uk | http://10.0.1.150:8123 |
 
 ### Tunnel IDs
@@ -160,12 +161,13 @@ When cloudflared is in the same Docker network as your service:
 ## Managing Routes
 
 ### View Routes
-1. Click tunnel → **Configure**
-2. Go to **Published application routes** tab
+1. Click tunnel name
+2. Go to **Published application routes** tab (visible directly, no Configure needed)
 
 ### Add Route
-1. Click **"+ Add a published application route"**
-2. Fill in:
+1. Click tunnel name → **"Published application routes"** tab (NOT Configure!)
+2. Click **"+ Add a published application route"**
+3. Fill in:
    - Subdomain (optional)
    - Domain (required)
    - Path (optional)
