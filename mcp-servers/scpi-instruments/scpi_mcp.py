@@ -5,6 +5,10 @@ SCPI Instruments MCP Server.
 Provides MCP tool access to SCPI-enabled test equipment:
 - RSA5065N Real-Time Spectrum Analyser
 - MSO8204 Mixed Signal Oscilloscope
+- DMM6500 6.5-Digit Multimeter
+- DL3021A DC Electronic Load
+- DG2052 Function/Arbitrary Waveform Generator
+- DP932A Programmable DC Power Supply (x2)
 
 Transport: Raw TCP socket (not VISA/VXI-11)
 Protocol: SSE for MCP communication
@@ -23,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from scpi_transport import SCPISocket, SCPIError, SCPIConnectionError
 from connection_pool import ConnectionPool, InstrumentConfig, get_pool, init_pool
-from instruments import RSA5065N, MSO8204
+from instruments import RSA5065N, MSO8204, DMM6500, DL3021A, DG2052, DP932A
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
@@ -34,17 +38,54 @@ mcp = FastMCP("scpi-instruments")
 
 # Initialize connection pool with environment config
 INSTRUMENTS = {
+    # Spectrum Analyser
     "rsa5065n": InstrumentConfig(
         name="rsa5065n",
         ip=os.environ.get("RSA5065N_IP", "10.0.1.85"),
         port=int(os.environ.get("SCPI_PORT", "5555")),
         instrument_type="rsa5065n"
     ),
+    # Oscilloscope
     "mso8204": InstrumentConfig(
         name="mso8204",
         ip=os.environ.get("MSO8204_IP", "10.0.1.106"),
         port=int(os.environ.get("SCPI_PORT", "5555")),
         instrument_type="mso8204"
+    ),
+    # Multimeter
+    "dmm6500": InstrumentConfig(
+        name="dmm6500",
+        ip=os.environ.get("DMM6500_IP", "10.0.1.101"),
+        port=int(os.environ.get("DMM_PORT", "5025")),
+        instrument_type="dmm6500"
+    ),
+    # DC Electronic Load
+    "dl3021a": InstrumentConfig(
+        name="dl3021a",
+        ip=os.environ.get("DL3021A_IP", "10.0.1.105"),
+        port=int(os.environ.get("SCPI_PORT", "5555")),
+        instrument_type="dl3021a"
+    ),
+    # Function Generator / AWG
+    "dg2052": InstrumentConfig(
+        name="dg2052",
+        ip=os.environ.get("DG2052_IP", "10.0.1.120"),
+        port=int(os.environ.get("SCPI_PORT", "5555")),
+        instrument_type="dg2052"
+    ),
+    # Power Supply 1
+    "dp932a-1": InstrumentConfig(
+        name="dp932a-1",
+        ip=os.environ.get("DP932A_1_IP", "10.0.1.111"),
+        port=int(os.environ.get("PSU_PORT", "5025")),
+        instrument_type="dp932a"
+    ),
+    # Power Supply 2
+    "dp932a-2": InstrumentConfig(
+        name="dp932a-2",
+        ip=os.environ.get("DP932A_2_IP", "10.0.1.138"),
+        port=int(os.environ.get("PSU_PORT", "5025")),
+        instrument_type="dp932a"
     ),
 }
 
@@ -64,6 +105,14 @@ def get_instrument(name: str):
         return RSA5065N(sock)
     elif config.instrument_type == "mso8204":
         return MSO8204(sock)
+    elif config.instrument_type == "dmm6500":
+        return DMM6500(sock)
+    elif config.instrument_type == "dl3021a":
+        return DL3021A(sock)
+    elif config.instrument_type == "dg2052":
+        return DG2052(sock)
+    elif config.instrument_type == "dp932a":
+        return DP932A(sock)
     else:
         raise ValueError(f"Unknown instrument type: {config.instrument_type}")
 
@@ -641,13 +690,758 @@ def scope_characterise_dual(
 
 
 # ==============================================================================
+# DMM6500 - Multimeter Tools (7)
+# ==============================================================================
+
+@mcp.tool()
+def dmm_reset() -> dict:
+    """
+    Reset the DMM6500 to known state.
+
+    Returns:
+        Dict with ok status and errors_drained count
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.reset()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@mcp.tool()
+def dmm_configure(
+    function: str,
+    range_val: Optional[float] = None,
+    nplc: Optional[float] = None,
+    auto_range: bool = True
+) -> dict:
+    """
+    Configure DMM measurement function.
+
+    Args:
+        function: Measurement function (dcv, acv, dci, aci, res, fres, temp, freq, cap)
+        range_val: Manual range value (None for auto)
+        nplc: Integration time in power line cycles (0.0005-15)
+        auto_range: Enable auto-ranging
+
+    Returns:
+        Dict with applied settings
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.configure(function, range_val, nplc, auto_range)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_measure() -> dict:
+    """
+    Take a single measurement with current configuration.
+
+    Returns:
+        Dict with value, function, and unit
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.measure()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_measure_dcv(range_val: Optional[float] = None, nplc: float = 1) -> dict:
+    """
+    Quick DC voltage measurement.
+
+    Args:
+        range_val: Manual range (None for auto)
+        nplc: Integration time (default 1)
+
+    Returns:
+        Dict with voltage_v
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.measure_dcv(range_val, nplc)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_measure_dci(range_val: Optional[float] = None, nplc: float = 1) -> dict:
+    """
+    Quick DC current measurement.
+
+    Args:
+        range_val: Manual range (None for auto)
+        nplc: Integration time (default 1)
+
+    Returns:
+        Dict with current_a
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.measure_dci(range_val, nplc)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_measure_resistance(four_wire: bool = False, range_val: Optional[float] = None) -> dict:
+    """
+    Resistance measurement (2-wire or 4-wire).
+
+    Args:
+        four_wire: Use 4-wire measurement for high accuracy
+        range_val: Manual range (None for auto)
+
+    Returns:
+        Dict with resistance_ohm
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.measure_resistance(four_wire, range_val)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_measure_temperature(sensor: str = "RTD", rtd_type: str = "PT100") -> dict:
+    """
+    Temperature measurement.
+
+    Args:
+        sensor: Sensor type (RTD, THER, TC)
+        rtd_type: RTD type if using RTD (PT100, PT385, PT3916)
+
+    Returns:
+        Dict with temperature_c
+    """
+    try:
+        dmm = get_instrument("dmm6500")
+        return dmm.measure_temperature(sensor, rtd_type)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ==============================================================================
+# DL3021A - DC Electronic Load Tools (8)
+# ==============================================================================
+
+@mcp.tool()
+def load_reset() -> dict:
+    """
+    Reset the DL3021A to known state (input OFF).
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.reset()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@mcp.tool()
+def load_input(enabled: bool) -> dict:
+    """
+    Enable or disable load input.
+
+    CAUTION: Enabling input will sink current from connected source.
+
+    Args:
+        enabled: True to enable, False to disable
+
+    Returns:
+        Dict with input state
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.input_state(enabled)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def load_cc(current_a: float, slew_rate: Optional[float] = None, voltage_limit: Optional[float] = None) -> dict:
+    """
+    Configure Constant Current mode.
+
+    Args:
+        current_a: Load current in Amps (0-40A)
+        slew_rate: Current slew rate in A/us
+        voltage_limit: Maximum voltage limit
+
+    Returns:
+        Dict with CC mode settings
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.configure_cc(current_a, slew_rate, voltage_limit)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def load_cv(voltage_v: float, current_limit: Optional[float] = None) -> dict:
+    """
+    Configure Constant Voltage mode.
+
+    Args:
+        voltage_v: Load voltage in Volts (0-150V)
+        current_limit: Maximum current limit
+
+    Returns:
+        Dict with CV mode settings
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.configure_cv(voltage_v, current_limit)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def load_cr(resistance_ohm: float, current_limit: Optional[float] = None) -> dict:
+    """
+    Configure Constant Resistance mode.
+
+    Args:
+        resistance_ohm: Load resistance in Ohms
+        current_limit: Maximum current limit
+
+    Returns:
+        Dict with CR mode settings
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.configure_cr(resistance_ohm, current_limit)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def load_cp(power_w: float, current_limit: Optional[float] = None) -> dict:
+    """
+    Configure Constant Power mode.
+
+    Args:
+        power_w: Load power in Watts (0-200W)
+        current_limit: Maximum current limit
+
+    Returns:
+        Dict with CP mode settings
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.configure_cp(power_w, current_limit)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def load_measure() -> dict:
+    """
+    Read voltage, current, and power measurements.
+
+    Returns:
+        Dict with voltage_v, current_a, power_w
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.measure()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def load_transient(
+    mode: str = "continuous",
+    level_a: float = 0.5,
+    level_b: float = 1.0,
+    frequency_hz: Optional[float] = None
+) -> dict:
+    """
+    Configure transient (dynamic) mode.
+
+    Args:
+        mode: Transient mode (continuous, pulse, toggle)
+        level_a: Level A current in Amps
+        level_b: Level B current in Amps
+        frequency_hz: Frequency for continuous mode
+
+    Returns:
+        Dict with transient settings
+    """
+    try:
+        load = get_instrument("dl3021a")
+        return load.configure_transient(mode, level_a, level_b, frequency_hz)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ==============================================================================
+# DG2052 - Function Generator Tools (10)
+# ==============================================================================
+
+@mcp.tool()
+def awg_reset() -> dict:
+    """
+    Reset the DG2052 to known state (outputs OFF).
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.reset()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@mcp.tool()
+def awg_output(channel: int, enabled: bool) -> dict:
+    """
+    Enable or disable channel output.
+
+    CAUTION: Enabling output will produce signal on connected device.
+
+    Args:
+        channel: Channel number (1 or 2)
+        enabled: True to enable, False to disable
+
+    Returns:
+        Dict with output state
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.output_state(channel, enabled)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_sine(
+    channel: int,
+    frequency_hz: float,
+    amplitude_vpp: float,
+    offset_v: float = 0,
+    phase_deg: float = 0
+) -> dict:
+    """
+    Configure sine wave output.
+
+    Args:
+        channel: Channel (1 or 2)
+        frequency_hz: Frequency (1 μHz - 50 MHz)
+        amplitude_vpp: Amplitude in Vpp
+        offset_v: DC offset
+        phase_deg: Phase (0-360)
+
+    Returns:
+        Dict with waveform settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_sine(channel, frequency_hz, amplitude_vpp, offset_v, phase_deg)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_square(
+    channel: int,
+    frequency_hz: float,
+    amplitude_vpp: float,
+    duty_cycle_pct: float = 50,
+    offset_v: float = 0
+) -> dict:
+    """
+    Configure square wave output.
+
+    Args:
+        channel: Channel (1 or 2)
+        frequency_hz: Frequency (1 μHz - 15 MHz)
+        amplitude_vpp: Amplitude in Vpp
+        duty_cycle_pct: Duty cycle (0.01-99.99%)
+        offset_v: DC offset
+
+    Returns:
+        Dict with waveform settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_square(channel, frequency_hz, amplitude_vpp, duty_cycle_pct, offset_v)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_pulse(
+    channel: int,
+    frequency_hz: float,
+    amplitude_vpp: float,
+    width_s: Optional[float] = None,
+    duty_cycle_pct: Optional[float] = None,
+    offset_v: float = 0
+) -> dict:
+    """
+    Configure pulse output.
+
+    Args:
+        channel: Channel (1 or 2)
+        frequency_hz: Frequency
+        amplitude_vpp: Amplitude in Vpp
+        width_s: Pulse width in seconds (alternative to duty_cycle)
+        duty_cycle_pct: Duty cycle (alternative to width)
+        offset_v: DC offset
+
+    Returns:
+        Dict with pulse settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_pulse(channel, frequency_hz, amplitude_vpp, width_s, duty_cycle_pct, offset_v=offset_v)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_ramp(
+    channel: int,
+    frequency_hz: float,
+    amplitude_vpp: float,
+    symmetry_pct: float = 50,
+    offset_v: float = 0
+) -> dict:
+    """
+    Configure ramp/triangle wave output.
+
+    Args:
+        channel: Channel (1 or 2)
+        frequency_hz: Frequency (1 μHz - 1.5 MHz)
+        amplitude_vpp: Amplitude in Vpp
+        symmetry_pct: Symmetry (0-100%, 50% = triangle)
+        offset_v: DC offset
+
+    Returns:
+        Dict with ramp settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_ramp(channel, frequency_hz, amplitude_vpp, symmetry_pct, offset_v)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_noise(channel: int, amplitude_vpp: float, offset_v: float = 0) -> dict:
+    """
+    Configure noise output.
+
+    Args:
+        channel: Channel (1 or 2)
+        amplitude_vpp: Amplitude in Vpp
+        offset_v: DC offset
+
+    Returns:
+        Dict with noise settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_noise(channel, amplitude_vpp, offset_v)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_sweep(
+    channel: int,
+    start_hz: float,
+    stop_hz: float,
+    sweep_time_s: float,
+    spacing: str = "linear"
+) -> dict:
+    """
+    Configure frequency sweep.
+
+    Args:
+        channel: Channel (1 or 2)
+        start_hz: Start frequency
+        stop_hz: Stop frequency
+        sweep_time_s: Sweep time in seconds
+        spacing: Sweep spacing (linear or log)
+
+    Returns:
+        Dict with sweep settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_sweep(channel, start_hz, stop_hz, sweep_time_s, spacing)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_burst(
+    channel: int,
+    cycles: int,
+    mode: str = "triggered",
+    trigger_source: str = "manual"
+) -> dict:
+    """
+    Configure burst mode.
+
+    Args:
+        channel: Channel (1 or 2)
+        cycles: Number of cycles per burst
+        mode: Burst mode (triggered, gated, infinity)
+        trigger_source: Trigger source (internal, external, manual)
+
+    Returns:
+        Dict with burst settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_burst(channel, cycles, mode, trigger_source)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def awg_dual_channel(
+    frequency_hz: float,
+    amplitude_vpp: float,
+    phase_offset_deg: float = 90
+) -> dict:
+    """
+    Configure both channels with same frequency but phase offset.
+
+    Useful for quadrature signals, I/Q generation, etc.
+
+    Args:
+        frequency_hz: Frequency for both channels
+        amplitude_vpp: Amplitude for both channels
+        phase_offset_deg: Phase offset between channels (default 90°)
+
+    Returns:
+        Dict with dual channel settings
+    """
+    try:
+        awg = get_instrument("dg2052")
+        return awg.configure_dual_channel(frequency_hz, amplitude_vpp, phase_offset_deg)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ==============================================================================
+# DP932A - Power Supply Tools (9)
+# ==============================================================================
+
+@mcp.tool()
+def psu_reset(psu: str = "dp932a-1") -> dict:
+    """
+    Reset the power supply to known state (outputs OFF).
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.reset()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@mcp.tool()
+def psu_output(psu: str, channel: int, enabled: bool) -> dict:
+    """
+    Enable or disable channel output.
+
+    CAUTION: Enabling output will apply voltage to connected load.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+        channel: Channel number (1, 2, or 3)
+        enabled: True to enable, False to disable
+
+    Returns:
+        Dict with output state
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.output_state(channel, enabled)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_all_off(psu: str = "dp932a-1") -> dict:
+    """
+    Disable all outputs on a power supply.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+
+    Returns:
+        Dict with all channels off status
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.all_outputs_off()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_set_channel(psu: str, channel: int, voltage_v: float, current_a: float) -> dict:
+    """
+    Set voltage and current for a channel.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+        channel: Channel number (1, 2, or 3)
+        voltage_v: Output voltage (CH1/2: 0-32V, CH3: 0-6V)
+        current_a: Current limit (0-3A)
+
+    Returns:
+        Dict with applied settings
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.set_channel(channel, voltage_v, current_a)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_measure(psu: str, channel: int) -> dict:
+    """
+    Read voltage, current, and power for a channel.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+        channel: Channel number (1, 2, or 3)
+
+    Returns:
+        Dict with voltage_v, current_a, power_w
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.measure(channel)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_measure_all(psu: str = "dp932a-1") -> dict:
+    """
+    Read measurements for all channels.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+
+    Returns:
+        Dict with ch1, ch2, ch3 measurements
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.measure_all()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_protection(
+    psu: str,
+    channel: int,
+    ovp_enabled: bool = True,
+    ovp_voltage_v: Optional[float] = None,
+    ocp_enabled: bool = True,
+    ocp_current_a: Optional[float] = None
+) -> dict:
+    """
+    Configure over-voltage and over-current protection.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+        channel: Channel number (1, 2, or 3)
+        ovp_enabled: Enable OVP
+        ovp_voltage_v: OVP threshold voltage
+        ocp_enabled: Enable OCP
+        ocp_current_a: OCP threshold current
+
+    Returns:
+        Dict with protection settings
+    """
+    try:
+        supply = get_instrument(psu)
+        result = {}
+        if ovp_enabled is not None:
+            result["ovp"] = supply.set_ovp(channel, ovp_enabled, ovp_voltage_v)
+        if ocp_enabled is not None:
+            result["ocp"] = supply.set_ocp(channel, ocp_enabled, ocp_current_a)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_tracking(psu: str, mode: int) -> dict:
+    """
+    Set tracking mode for CH1 and CH2.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+        mode: 0=Independent, 1=Series (CH1+CH2=0-64V), 2=Parallel (CH1||CH2=0-6A)
+
+    Returns:
+        Dict with tracking mode
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.set_tracking(mode)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def psu_quick_output(psu: str, channel: int, voltage_v: float, current_a: float) -> dict:
+    """
+    Configure and enable output in one call.
+
+    CAUTION: This will apply voltage immediately.
+
+    Args:
+        psu: PSU name ("dp932a-1" or "dp932a-2")
+        channel: Channel number (1, 2, or 3)
+        voltage_v: Output voltage
+        current_a: Current limit
+
+    Returns:
+        Dict with configuration and live measurements
+    """
+    try:
+        supply = get_instrument(psu)
+        return supply.quick_output(channel, voltage_v, current_a)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ==============================================================================
 # Run Server
 # ==============================================================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("MCP_PORT", 8081))
     logger.info("Starting SCPI Instruments MCP Server")
-    logger.info("RSA5065N: %s", INSTRUMENTS["rsa5065n"].ip)
-    logger.info("MSO8204: %s", INSTRUMENTS["mso8204"].ip)
+    logger.info("Instruments configured:")
+    for name, config in INSTRUMENTS.items():
+        logger.info("  %s: %s:%d", name, config.ip, config.port)
     logger.info("Listening on port %d", port)
     mcp.run(transport="sse", port=port, host="0.0.0.0")
