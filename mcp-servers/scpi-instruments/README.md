@@ -9,7 +9,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | Spectrum Analyser | Rigol RSA5065N | 10.0.1.85 | 5555 | Real-time spectrum analyser |
 | Oscilloscope | Rigol MSO8204 | 10.0.1.106 | 5555 | 4-ch mixed signal oscilloscope |
 
-## MCP Tools (24 total)
+## MCP Tools (25 total)
 
 ### Connection Management (3)
 
@@ -37,7 +37,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | `rsa_capture_burst` | Capture N consecutive sweeps |
 | `rsa_screenshot` | Capture display (BMP) |
 
-### MSO8204 - Oscilloscope (11)
+### MSO8204 - Oscilloscope (12)
 
 | Tool | Description |
 |------|-------------|
@@ -52,6 +52,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | `scope_waveform` | Capture raw waveform data |
 | `scope_screenshot` | Capture display (PNG/BMP/JPEG) |
 | `scope_fft` | Configure FFT display |
+| `scope_counter` | Hardware frequency counter (accurate, use instead of scope_measure) |
 
 ### Composite Tools (2)
 

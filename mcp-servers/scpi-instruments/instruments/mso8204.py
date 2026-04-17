@@ -256,6 +256,50 @@ class MSO8204(BaseInstrument):
             "results": results
         }
 
+    # ---- Hardware Frequency Counter ----
+
+    def counter(self, channel: int) -> dict:
+        """
+        Read frequency using the hardware frequency counter.
+
+        The hardware counter is more accurate than :MEASure:FREQuency? which
+        uses waveform-based estimation (~0.4% error). The counter uses
+        hardware gating for exact frequency measurement.
+
+        Args:
+            channel: Channel number (1-4)
+
+        Returns:
+            Dict with frequency_hz (authoritative) and source
+        """
+        # Enable the counter
+        self.write(":COUNter:ENABle ON")
+        time.sleep(self.PACING)
+
+        # Set source channel
+        self.write(f":COUNter:SOURce CHANnel{channel}")
+        time.sleep(self.PACING)
+
+        # Wait for counter to settle (hardware gating needs a measurement window)
+        time.sleep(0.3)
+
+        # Read the frequency (authoritative, hardware-gated)
+        try:
+            freq_str = self.query(":COUNter:CURRent?")
+            frequency_hz = float(freq_str)
+        except (ValueError, Exception) as e:
+            logger.warning("Hardware counter read failed: %s", e)
+            return {
+                "error": f"Counter read failed: {e}",
+                "channel": channel
+            }
+
+        return {
+            "frequency_hz": frequency_hz,
+            "source": f"CHANnel{channel}",
+            "method": "hardware_counter"
+        }
+
     def measure_phase(self, source_a: int, source_b: int) -> dict:
         """
         Measure phase relationship between two channels.

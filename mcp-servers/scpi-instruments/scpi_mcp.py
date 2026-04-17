@@ -310,7 +310,7 @@ def rsa_screenshot(filename: str) -> dict:
 
 
 # ==============================================================================
-# MSO8204 - Oscilloscope Tools (11)
+# MSO8204 - Oscilloscope Tools (12)
 # ==============================================================================
 
 @mcp.tool()
@@ -557,6 +557,32 @@ def scope_fft(
     try:
         scope = get_instrument("mso8204")
         return scope.fft(source_channel, window, unit)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def scope_counter(channel: int) -> dict:
+    """
+    Read frequency using the hardware frequency counter.
+
+    Uses the MSO8204's dedicated hardware counter which is more accurate than
+    the waveform-based :MEASure:FREQuency? (which has ~0.4% error at typical
+    timebases). The hardware counter uses hardware gating for exact frequency
+    measurement.
+
+    IMPORTANT: Always prefer this tool over scope_measure(FREQuency) for
+    accurate frequency readings.
+
+    Args:
+        channel: Channel number (1-4)
+
+    Returns:
+        Dict with frequency_hz (authoritative), source, and method
+    """
+    try:
+        scope = get_instrument("mso8204")
+        return scope.counter(channel)
     except Exception as e:
         return {"error": str(e)}
 
