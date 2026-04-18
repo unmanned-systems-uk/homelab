@@ -24,9 +24,14 @@ logger = logging.getLogger(__name__)
 
 # Transport constants
 PACING_DELAY = 0.05       # 50 ms inter-command pacing (CRITICAL)
-QUIET_TIMEOUT = 0.5       # seconds - detect unterminated response
+QUIET_TIMEOUT = 1.0       # seconds - detect unterminated response (raised from 0.5 for large traces)
 DEFAULT_TIMEOUT = 10.0    # seconds - wait for first byte
 DEFAULT_PORT = 5555
+
+# TCP keepalive settings (detect dead peers in <90s instead of ~2h)
+KEEPALIVE_IDLE = 60       # seconds before first probe
+KEEPALIVE_INTERVAL = 10   # seconds between probes
+KEEPALIVE_COUNT = 3       # probes before giving up
 
 
 class SCPIError(Exception):
@@ -78,6 +83,11 @@ class SCPISocket:
 
         try:
             self._sock.connect((self.ip, self.port))
+            # Enable TCP keepalive to detect dead peers quickly
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, KEEPALIVE_IDLE)
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, KEEPALIVE_INTERVAL)
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, KEEPALIVE_COUNT)
         except socket.timeout:
             self._sock = None
             raise SCPIConnectionError(
@@ -158,11 +168,13 @@ class SCPISocket:
             except socket.timeout:
                 if buf:
                     break  # quiet after data = response complete
+                self._sock = None  # Bug fix: null socket on timeout to trigger reconnect
                 raise SCPITimeoutError(
                     f"Read timed out after {self.timeout}s (no data received)")
             if not chunk:
                 if buf:
                     break
+                self._sock = None  # Bug fix: null socket on close to trigger reconnect
                 raise SCPIConnectionError("Connection closed by instrument")
             buf += chunk
 
@@ -179,9 +191,11 @@ class SCPISocket:
             try:
                 chunk = self._sock.recv(min(remaining, 65536))
             except socket.timeout:
+                self._sock = None  # Bug fix: null socket on timeout to trigger reconnect
                 raise SCPITimeoutError(
                     f"Read timed out. Expected {n} bytes, received {len(buf)}.")
             if not chunk:
+                self._sock = None  # Bug fix: null socket on close to trigger reconnect
                 raise SCPIConnectionError(
                     f"Socket closed during read. Expected {n} bytes, got {len(buf)}.")
             buf += chunk
@@ -202,8 +216,13 @@ class SCPISocket:
         self._sock.settimeout(self.timeout)
         header = b""
         while len(header) < 2:
-            chunk = self._sock.recv(2 - len(header))
+            try:
+                chunk = self._sock.recv(2 - len(header))
+            except socket.timeout:
+                self._sock = None  # Bug fix: null socket on timeout
+                raise SCPITimeoutError("Timeout reading block header")
             if not chunk:
+                self._sock = None  # Bug fix: null socket on close
                 raise SCPIConnectionError("Connection closed reading block header")
             header += chunk
 
@@ -217,8 +236,13 @@ class SCPISocket:
         # Read count digits
         count_buf = b""
         while len(count_buf) < d:
-            chunk = self._sock.recv(d - len(count_buf))
+            try:
+                chunk = self._sock.recv(d - len(count_buf))
+            except socket.timeout:
+                self._sock = None  # Bug fix: null socket on timeout
+                raise SCPITimeoutError("Timeout reading block count")
             if not chunk:
+                self._sock = None  # Bug fix: null socket on close
                 raise SCPIConnectionError("Connection closed reading block count")
             count_buf += chunk
 
@@ -229,8 +253,14 @@ class SCPISocket:
         payload = b""
         while len(payload) < payload_len:
             remaining = payload_len - len(payload)
-            chunk = self._sock.recv(min(remaining, 65536))
+            try:
+                chunk = self._sock.recv(min(remaining, 65536))
+            except socket.timeout:
+                self._sock = None  # Bug fix: null socket on timeout
+                raise SCPITimeoutError(
+                    f"Timeout during block read ({len(payload)}/{payload_len} bytes)")
             if not chunk:
+                self._sock = None  # Bug fix: null socket on close
                 raise SCPIConnectionError(
                     f"Connection closed during block read "
                     f"({len(payload)}/{payload_len} bytes)")

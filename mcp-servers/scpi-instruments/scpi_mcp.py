@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from scpi_transport import SCPISocket, SCPIError, SCPIConnectionError
 from connection_pool import ConnectionPool, InstrumentConfig, get_pool, init_pool
-from instruments import RSA5065N, MSO8204, DMM6500, DL3021A, DG2052, DP932A
+from instruments import RSA5065N, MSO8204, DMM6500, DMM6500_TSP, DL3021A, DG2052, DP932A
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
@@ -115,6 +115,26 @@ def get_instrument(name: str):
         return DP932A(sock)
     else:
         raise ValueError(f"Unknown instrument type: {config.instrument_type}")
+
+
+def get_dmm_tsp() -> DMM6500_TSP:
+    """
+    Get DMM6500 driver in TSP mode.
+
+    Auto-detects mode on first connection. If DMM is not in TSP mode,
+    TSP commands will fail - switch mode from front panel.
+    """
+    pool = get_pool()
+    sock = pool.get_socket("dmm6500")
+
+    # Detect mode if not already done
+    mode = pool.get_detected_mode("dmm6500")
+    if mode is None:
+        mode = pool.detect_dmm_mode("dmm6500")
+        if mode and mode != "tsp":
+            logger.warning("DMM6500 is in %s mode, not TSP. TSP commands may fail.", mode)
+
+    return DMM6500_TSP(sock)
 
 
 # ==============================================================================
@@ -1450,6 +1470,398 @@ def psu_quick_output(psu: str, channel: int, voltage_v: float, current_a: float)
     try:
         supply = get_instrument(psu)
         return supply.quick_output(channel, voltage_v, current_a)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ==============================================================================
+# DMM6500 TSP Mode Tools (19)
+# ==============================================================================
+
+@mcp.tool()
+def dmm_tsp_reset() -> dict:
+    """
+    Reset the DMM6500 in TSP mode.
+
+    Sends reset() command and clears event log.
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.reset()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_configure(
+    function: str,
+    range_val: Optional[float] = None,
+    nplc: Optional[float] = None,
+    auto_range: bool = True
+) -> dict:
+    """
+    Configure DMM measurement function (TSP mode).
+
+    Args:
+        function: Measurement function (dcv, acv, dci, aci, res, fres, temp, freq, cap)
+        range_val: Manual range value (None for auto)
+        nplc: Integration time in power line cycles (0.0005-15)
+        auto_range: Enable auto-ranging
+
+    Returns:
+        Dict with applied settings
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.configure(function, range_val, nplc, auto_range)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_measure() -> dict:
+    """
+    Take a single measurement with current configuration (TSP mode).
+
+    Returns:
+        Dict with value, function, and unit
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.measure()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_measure_dcv(range_val: Optional[float] = None, nplc: float = 1) -> dict:
+    """
+    Quick DC voltage measurement (TSP mode).
+
+    Args:
+        range_val: Manual range (None for auto)
+        nplc: Integration time (default 1)
+
+    Returns:
+        Dict with voltage_v
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.measure_dcv(range_val, nplc)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_measure_dci(range_val: Optional[float] = None, nplc: float = 1) -> dict:
+    """
+    Quick DC current measurement (TSP mode).
+
+    Args:
+        range_val: Manual range (None for auto)
+        nplc: Integration time (default 1)
+
+    Returns:
+        Dict with current_a
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.measure_dci(range_val, nplc)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_measure_resistance(
+    four_wire: bool = False,
+    range_val: Optional[float] = None,
+    nplc: float = 1
+) -> dict:
+    """
+    Quick resistance measurement (TSP mode).
+
+    Args:
+        four_wire: Use 4-wire measurement for high accuracy
+        range_val: Manual range (None for auto)
+        nplc: Integration time (default 1)
+
+    Returns:
+        Dict with resistance_ohm
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.measure_resistance(four_wire, range_val, nplc)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_measure_temperature(sensor: str = "RTD", rtd_type: str = "PT100") -> dict:
+    """
+    Temperature measurement (TSP mode).
+
+    Args:
+        sensor: Sensor type (RTD, THER)
+        rtd_type: RTD type if using RTD (PT100, PT385, PT3916)
+
+    Returns:
+        Dict with temperature_c
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.measure_temperature(sensor, rtd_type)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---- TSP Digitizing ----
+
+@mcp.tool()
+def dmm_tsp_digitize_configure(
+    function: str = "dcv",
+    sample_rate: int = 1000,
+    count: int = 1000,
+    range_val: Optional[float] = None
+) -> dict:
+    """
+    Configure digitizing mode for high-speed sampling (TSP mode).
+
+    Args:
+        function: Digitize function ("dcv" or "dci")
+        sample_rate: Samples per second (1 to 1,000,000)
+        count: Number of samples to capture
+        range_val: Manual range (None for auto)
+
+    Returns:
+        Dict with configuration
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.digitize_configure(function, sample_rate, count, range_val)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_digitize_read(buffer_name: str = "defbuffer1") -> dict:
+    """
+    Read digitized samples from buffer (TSP mode).
+
+    Args:
+        buffer_name: Buffer to read from (default "defbuffer1")
+
+    Returns:
+        Dict with samples list and statistics (min, max, avg)
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.digitize_read(buffer_name)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_digitize_trigger(
+    edge_level: float,
+    slope: str = "rising",
+    pre_trigger: int = 0
+) -> dict:
+    """
+    Configure analog trigger for digitizing (TSP mode).
+
+    Args:
+        edge_level: Trigger level (voltage or current)
+        slope: Trigger slope ("rising" or "falling")
+        pre_trigger: Number of pre-trigger samples
+
+    Returns:
+        Dict with trigger configuration
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.digitize_trigger(edge_level, slope, pre_trigger)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---- TSP Buffers ----
+
+@mcp.tool()
+def dmm_tsp_buffer_create(
+    name: str,
+    capacity: int = 1000,
+    style: str = "standard"
+) -> dict:
+    """
+    Create a reading buffer (TSP mode).
+
+    Args:
+        name: Buffer variable name (e.g., "mybuffer")
+        capacity: Number of readings to store
+        style: Buffer style ("standard", "writable", "compact")
+
+    Returns:
+        Dict with buffer info
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.buffer_create(name, capacity, style)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_buffer_read(
+    buffer_name: str = "defbuffer1",
+    start: int = 1,
+    count: Optional[int] = None
+) -> dict:
+    """
+    Read data from a buffer (TSP mode).
+
+    Args:
+        buffer_name: Buffer to read from
+        start: Starting index (1-based)
+        count: Number of readings (None for all)
+
+    Returns:
+        Dict with readings list
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.buffer_read(buffer_name, start, count)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_buffer_clear(buffer_name: str = "defbuffer1") -> dict:
+    """
+    Clear a buffer (TSP mode).
+
+    Args:
+        buffer_name: Buffer to clear
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.buffer_clear(buffer_name)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_buffer_stats(buffer_name: str = "defbuffer1") -> dict:
+    """
+    Get buffer statistics (TSP mode).
+
+    Args:
+        buffer_name: Buffer to analyze
+
+    Returns:
+        Dict with min, max, mean, stddev, count
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.buffer_stats(buffer_name)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---- TSP Trigger Model ----
+
+@mcp.tool()
+def dmm_tsp_trigger_load(template: str, count: int = 1) -> dict:
+    """
+    Load a trigger model template (TSP mode).
+
+    Args:
+        template: Template name ("SimpleLoop", "DurationLoop", "GradeBinning", "Empty")
+        count: Number of readings/loops for SimpleLoop
+
+    Returns:
+        Dict with trigger model info
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.trigger_load(template, count)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_trigger_initiate() -> dict:
+    """
+    Start the trigger model (TSP mode).
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.trigger_initiate()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_trigger_abort() -> dict:
+    """
+    Abort the running trigger model (TSP mode).
+
+    Returns:
+        Dict with ok status
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.trigger_abort()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---- TSP Scripting ----
+
+@mcp.tool()
+def dmm_tsp_execute(script: str) -> dict:
+    """
+    Execute arbitrary TSP Lua script (TSP mode).
+
+    WARNING: This executes raw Lua code on the instrument.
+    Use with caution.
+
+    Args:
+        script: Multi-line TSP Lua code
+
+    Returns:
+        Dict with ok status and lines executed
+    """
+    try:
+        dmm = get_dmm_tsp()
+        return dmm.tsp_execute(script)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def dmm_tsp_query(expression: str) -> dict:
+    """
+    Execute TSP expression and return result (TSP mode).
+
+    Args:
+        expression: TSP Lua expression (e.g., "dmm.measure.read()")
+
+    Returns:
+        Dict with result string
+    """
+    try:
+        dmm = get_dmm_tsp()
+        result = dmm.tsp_query(expression)
+        return {"result": result, "expression": expression, "mode": "tsp"}
     except Exception as e:
         return {"error": str(e)}
 

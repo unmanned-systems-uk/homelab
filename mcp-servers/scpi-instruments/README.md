@@ -14,7 +14,7 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | PSU-1 | Rigol DP932A | 10.0.1.111 | 5025 | Triple output power supply |
 | PSU-2 | Rigol DP932A | 10.0.1.138 | 5025 | Triple output power supply |
 
-## MCP Tools (60 total)
+## MCP Tools (79 total)
 
 ### Connection Management (3)
 
@@ -115,6 +115,33 @@ MCP server providing tool access to SCPI-enabled test equipment via raw TCP sock
 | `psu_protection` | Configure OVP/OCP |
 | `psu_tracking` | Set tracking mode (series/parallel) |
 | `psu_quick_output` | Configure and enable in one call |
+
+### DMM6500 TSP Mode (19)
+
+TSP (Test Script Processor) tools for when DMM6500 is in TSP mode.
+Set mode from front panel: System → Settings → Command Set → TSP.
+
+| Tool | Description |
+|------|-------------|
+| `dmm_tsp_reset` | Reset DMM (TSP mode) |
+| `dmm_tsp_configure` | Configure measurement function |
+| `dmm_tsp_measure` | Single measurement |
+| `dmm_tsp_measure_dcv` | Quick DC voltage |
+| `dmm_tsp_measure_dci` | Quick DC current |
+| `dmm_tsp_measure_resistance` | 2W/4W resistance |
+| `dmm_tsp_measure_temperature` | Temperature (RTD/thermistor) |
+| `dmm_tsp_digitize_configure` | Configure high-speed sampling |
+| `dmm_tsp_digitize_read` | Read captured samples |
+| `dmm_tsp_digitize_trigger` | Configure analog trigger |
+| `dmm_tsp_buffer_create` | Create reading buffer |
+| `dmm_tsp_buffer_read` | Read buffer contents |
+| `dmm_tsp_buffer_clear` | Clear buffer |
+| `dmm_tsp_buffer_stats` | Get buffer statistics |
+| `dmm_tsp_trigger_load` | Load trigger model template |
+| `dmm_tsp_trigger_initiate` | Start trigger model |
+| `dmm_tsp_trigger_abort` | Abort trigger model |
+| `dmm_tsp_execute` | Execute TSP Lua script |
+| `dmm_tsp_query` | Query TSP expression |
 
 ## Quick Start
 

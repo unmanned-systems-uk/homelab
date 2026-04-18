@@ -8,6 +8,7 @@ Prevents per-call connection overhead and instrument re-initialization.
 
 import logging
 import threading
+import time
 from typing import Optional, Dict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -36,6 +37,7 @@ class InstrumentState:
     connected_at: Optional[datetime] = None
     last_error: Optional[str] = None
     error_count: int = 0
+    detected_mode: Optional[str] = None  # "scpi", "tsp", or None
 
 
 # Default instrument registry
@@ -253,6 +255,60 @@ class ConnectionPool:
 
             raise SCPIConnectionError(f"Not connected to {instrument}")
 
+    def detect_dmm_mode(self, key: str) -> Optional[str]:
+        """
+        Detect whether DMM6500 is in SCPI or TSP mode.
+
+        Args:
+            key: Instrument key in connections dict
+
+        Returns:
+            "scpi", "tsp", or None if detection failed
+        """
+        if key not in self._connections:
+            return None
+
+        state = self._connections[key]
+        if not state.socket or not state.socket.connected:
+            return None
+
+        sock = state.socket
+
+        # Try SCPI first - *IDN? should work in SCPI mode
+        try:
+            response = sock.query("*IDN?")
+            if "KEITHLEY" in response.upper() or "DMM6500" in response.upper():
+                logger.info("DMM6500 detected in SCPI mode")
+                state.detected_mode = "scpi"
+                return "scpi"
+        except Exception as e:
+            logger.debug("SCPI detection failed: %s", e)
+
+        # Try TSP - localnode.model should work in TSP mode
+        try:
+            # In TSP mode, we need to use print() to get output
+            sock._send(b"print(localnode.model)\n")
+            import time
+            time.sleep(0.1)
+            response = sock._recv_until().decode("ascii", errors="replace").strip()
+            if "DMM6500" in response.upper():
+                logger.info("DMM6500 detected in TSP mode")
+                state.detected_mode = "tsp"
+                return "tsp"
+        except Exception as e:
+            logger.debug("TSP detection failed: %s", e)
+
+        return None
+
+    def get_detected_mode(self, instrument: str) -> Optional[str]:
+        """Get the detected mode for an instrument."""
+        with self._lock:
+            config = self._resolve_instrument(instrument)
+            key = config.name
+            if key in self._connections:
+                return self._connections[key].detected_mode
+            return None
+
     def status(self) -> dict:
         """
         Get status of all instruments and connections.
@@ -290,6 +346,8 @@ class ConnectionPool:
                     if state.last_error:
                         info["last_error"] = state.last_error
                     info["error_count"] = state.error_count
+                    if state.detected_mode:
+                        info["detected_mode"] = state.detected_mode
 
                 instruments.append(info)
 
